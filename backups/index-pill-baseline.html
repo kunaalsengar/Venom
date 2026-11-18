@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>let’s collaborate</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap">
+<style>
+  :root { box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: inherit; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    overflow-x: hidden;
+    background: radial-gradient(120% 90% at 30% 20%, #e9e3dc 0%, #ddd8cd 60%, #d3cfc2 100%);
+    background-attachment: fixed;
+  }
+
+  /* Full-viewport fixed canvas keeps the scene centered even during page scroll */
+  canvas#c {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    cursor: none;
+    touch-action: none;
+  }
+
+  /* Accessible viewport-centered hit target synced to the rendered pill button */
+  #collab-btn {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border: 0;
+    padding: 0;
+    background: transparent;
+    border-radius: 999px;
+    cursor: none;
+    z-index: 2;
+    outline: none;
+  }
+  #collab-btn:focus-visible {
+    outline: 3px solid rgba(55, 65, 110, 0.7);
+    outline-offset: 6px;
+  }
+
+  #hint {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    text-align: center;
+    padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    font: 500 14px/1.4 Inter, "Helvetica Neue", Arial, sans-serif;
+    color: #6d685d;
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+    z-index: 3;
+  }
+  #hint.off { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-hidden="true"></canvas>
+<button id="collab-btn" type="button" aria-label="let’s collaborate"></button>
+<div id="hint">Bring your cursor close.</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---- Configurable Symbiote Parameters ----
+  // All distances are measured from the pill button's outer edge (in CSS pixels)
+  const CONFIG = {
+    activationRadius: 230,   // Edge distance where black matter senses cursor and reaches out
+    latchRadius: 155,        // Edge distance where reaching tendrils catch and attach to cursor
+    baseMaxStretch: 310,     // Base stretch limit before necking & breaking (varied per strand)
+    strandCount: 16,         // Mix of thick primary tendrils and fine viscous webbing
+    maxDroplets: 28,         // Fixed pool of breaking residue droplets
+    maxRipples: 10           // Surface ripples on the pill edge when snapped strands recoil back
+  };
+
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const btn = document.getElementById('collab-btn');
+  const hint = document.getElementById('hint');
+
+  const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+  let reduceMotion = motionQuery.matches;
+  motionQuery.addEventListener('change', (ev) => { reduceMotion = ev.matches; });
+
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load('700 20px Inter');
+  }
+
+  // ---- Math & Geometry Helpers (reused from baseline) ----
+  const clamp = (v, min, max) => (min > max ? min : Math.max(min, Math.min(max, v)));
+  const sstep = (a, b, x) => {
+    const t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function rr(targetCtx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    targetCtx.moveTo(x + r, y);
+    targetCtx.arcTo(x + w, y, x + w, y + h, r);
+    targetCtx.arcTo(x + w, y + h, x, y + h, r);
+    targetCtx.arcTo(x, y + h, x, y, r);
+    targetCtx.arcTo(x, y, x + w, y, r);
+    targetCtx.closePath();
+  }
+
+  // ---- Viewport, Pill Dimensions & Cached Pill Sprite ----
+  let W = 1, H = 1, dpr = 1;
+  let pillW = 300, pillH = 108, sc0 = 1;
+
+  // Pill stays permanently centered at (W / 2, H / 2)
+  const pill = { x: 0, y: 0, scale: 1, pressDip: 0, sheenOffset: 0 };
+
+  btn.addEventListener('click', () => {
+    pill.pressDip = 0.035;
+  });
+
+  // Offscreen cache for static pill body + shadow so shadowBlur is NOT redrawn every frame
+  const pillCache = document.createElement('canvas');
+  const pillCacheCtx = pillCache.getContext('2d');
+  let pillPad = 90;
+
+  function pillDims() {
+    // Preserve original proportions across desktop, laptop, and tablet viewports
+    const w = clamp(W * 0.36, 260, 400);
+    return { w, h: w * 0.36 };
+  }
+
+  function rebuildPillCache() {
+    const hw = pillW / 2;
+    const hh = pillH / 2;
+    pillPad = Math.ceil(72 * sc0);
+
+    const cw = Math.ceil(pillW + pillPad * 2);
+    const ch = Math.ceil(pillH + pillPad * 2);
+    pillCache.width = Math.round(cw * dpr);
+    pillCache.height = Math.round(ch * dpr);
+
+    const c = pillCacheCtx;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, cw, ch);
+    c.save();
+    c.translate(cw / 2, ch / 2);
+
+    // 1. Base obsidian body + purple-tinted drop shadow (preserved visual identity)
+    c.save();
+    c.shadowColor = 'rgba(70,60,125,0.38)';
+    c.shadowBlur = 38 * dpr * sc0;
+    c.shadowOffsetY = 24 * dpr * sc0;
+    const g = c.createLinearGradient(0, -hh, 0, hh);
+    g.addColorStop(0, '#24252c');
+    g.addColorStop(0.18, '#0e0e12');
+    g.addColorStop(0.55, '#030304');
+    g.addColorStop(0.9, '#08080b');
+    g.addColorStop(1, '#16171c');
+    c.fillStyle = g;
+    c.beginPath();
+    rr(c, -hw, -hh, pillW, pillH, hh);
+    c.fill();
+    c.restore();
+
+    // 2. Interior glossy reflections clipped to pill silhouette
+    c.save();
+    c.beginPath();
+    rr(c, -hw, -hh, pillW, pillH, hh);
+    c.clip();
+
+    const g2 = c.createLinearGradient(-hw, 0, -hw * 0.1, 0);
+    g2.addColorStop(0, 'rgba(150,180,230,0.42)');
+    g2.addColorStop(0.5, 'rgba(80,100,140,0.14)');
+    g2.addColorStop(1, 'rgba(80,100,140,0)');
+    c.fillStyle = g2;
+    c.beginPath();
+    rr(c, -hw + 7, -hh + 7, hw * 0.95, pillH - 14, hh - 7);
+    c.fill();
+
+    const g3 = c.createLinearGradient(0, -hh, 0, 0);
+    g3.addColorStop(0, 'rgba(255,255,255,0.34)');
+    g3.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g3;
+    c.beginPath();
+    c.ellipse(-hw * 0.05, -hh * 0.52, hw * 0.78, hh * 0.42, 0, 0, Math.PI * 2);
+    c.fill();
+
+    c.save();
+    c.translate(hw * 0.62, -hh * 0.42);
+    c.rotate(-0.22);
+    const g4 = c.createLinearGradient(-hw * 0.22, 0, hw * 0.22, 0);
+    g4.addColorStop(0, 'rgba(255,255,255,0)');
+    g4.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+    g4.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g4;
+    c.beginPath();
+    c.ellipse(0, 0, hw * 0.22, hh * 0.13, 0, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+
+    const g6 = c.createLinearGradient(0, -hh, 0, hh);
+    g6.addColorStop(0, 'rgba(255,255,255,0)');
+    g6.addColorStop(0.7, 'rgba(255,255,255,0)');
+    g6.addColorStop(1, 'rgba(255,255,255,0.2)');
+    c.strokeStyle = g6;
+    c.lineWidth = 3;
+    c.beginPath();
+    rr(c, -hw + 1.5, -hh + 1.5, pillW - 3, pillH - 3, hh - 1.5);
+    c.stroke();
+    c.restore();
+
+    // 3. Outer specular rim stroke
+    const g7 = c.createLinearGradient(0, -hh, 0, hh);
+    g7.addColorStop(0, 'rgba(255,255,255,0.5)');
+    g7.addColorStop(0.35, 'rgba(255,255,255,0.04)');
+    g7.addColorStop(1, 'rgba(255,255,255,0.14)');
+    c.strokeStyle = g7;
+    c.lineWidth = 1.4;
+    c.beginPath();
+    rr(c, -hw, -hh, pillW, pillH, hh);
+    c.stroke();
+
+    c.restore();
+  }
+
+  function syncButtonBounds() {
+    btn.style.width = pillW + 'px';
+    btn.style.height = pillH + 'px';
+  }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = document.documentElement.clientWidth || window.innerWidth;
+    H = window.innerHeight;
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+
+    const dims = pillDims();
+    pillW = dims.w;
+    pillH = dims.h;
+    sc0 = pillW / 300;
+    pill.x = W / 2;
+    pill.y = H / 2;
+
+    syncButtonBounds();
+    rebuildPillCache();
+  }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', resize);
+  resize();
+
+  // ---- Exact Stadium/Capsule Pill Geometry Helpers ----
+  // Returns distance from point (px, py) to pill outer edge, plus closest edge point and outward normal
+  function inspectPillEdge(px, py, scale) {
+    const hw = (pillW * scale) / 2;
+    const hh = (pillH * scale) / 2;
+    const seg = Math.max(0, hw - hh);
+
+    const dx = px - pill.x;
+    const dy = py - pill.y;
+    const spineX = clamp(dx, -seg, seg);
+    const vx = dx - spineX;
+    const vy = dy;
+    const distSpine = Math.hypot(vx, vy);
+
+    let nx = 0, ny = -1;
+    if (distSpine > 0.0001) {
+      nx = vx / distSpine;
+      ny = vy / distSpine;
+    }
+
+    return {
+      edgeDist: Math.max(0, distSpine - hh),
+      signedDist: distSpine - hh,
+      edgeX: pill.x + spineX + nx * hh,
+      edgeY: pill.y + ny * hh,
+      nx,
+      ny
+    };
+  }
+
+  // Projects an arbitrary point onto the exact pill capsule boundary, inset slightly so roots fuse seamlessly
+  function projectToPillEdge(px, py, scale, inset) {
+    const hw = (pillW * scale) / 2;
+    const hh = (pillH * scale) / 2;
+    const seg = Math.max(0, hw - hh);
+    const r = Math.max(2, hh - inset);
+
+    const dx = px - pill.x;
+    const dy = py - pill.y;
+    const spineX = clamp(dx, -seg, seg);
+    const vx = dx - spineX;
+    const vy = dy;
+    const len = Math.hypot(vx, vy) || 1;
+    const nx = vx / len;
+    const ny = vy / len;
+
+    return {
+      x: pill.x + spineX + nx * r,
+      y: pill.y + ny * r,
+      nx,
+      ny
+    };
+  }
+
+  // ---- Pointer Tracking (Desktop, Laptop, Tablet) ----
+  const cursor = {
+    x: W * 0.5,
+    y: H * 0.5,
+    prevX: W * 0.5,
+    prevY: H * 0.5,
+    vx: 0,
+    vy: 0,
+    speed: 0,
+    active: false,
+    isTouch: false,
+    started: false
+  };
+
+  function updatePointer(ev, isDown) {
+    if (!ev.isPrimary) return;
+    cursor.x = ev.clientX;
+    cursor.y = ev.clientY;
+    cursor.isTouch = ev.pointerType === 'touch';
+    cursor.active = true;
+    if (!cursor.started) {
+      cursor.started = true;
+      cursor.prevX = cursor.x;
+      cursor.prevY = cursor.y;
+      hint.classList.add('off');
+    } else if (isDown) {
+      cursor.prevX = cursor.x;
+      cursor.prevY = cursor.y;
+    }
+  }
+
+  window.addEventListener('pointermove', (ev) => updatePointer(ev, false));
+  window.addEventListener('pointerdown', (ev) => updatePointer(ev, true));
+  window.addEventListener('pointerup', (ev) => {
+    if (!ev.isPrimary) return;
+    // On tablet touch release, detach strands into natural elastic recoil
+    if (ev.pointerType === 'touch') {
+      cursor.active = false;
+    }
+  });
+  window.addEventListener('pointercancel', (ev) => {
+    if (ev.isPrimary) cursor.active = false;
+  });
+  document.documentElement.addEventListener('pointerleave', () => {
+    cursor.active = false;
+  });
+  window.addEventListener('blur', () => {
+    cursor.active = false;
+  });
+
+  // ---- Symbiote Strand Pool, Droplets & Surface Ripples ----
+  const strands = [];
+  for (let i = 0; i < CONFIG.strandCount; i++) {
+    const r = Math.random;
+    const isPrimary = i < 6; // 6 thicker primary bridges + 10 finer secondary sticky filaments
+    const spread = ((i / (CONFIG.strandCount - 1)) - 0.5) * 2; // [-1, 1]
+
+    strands.push({
+      id: i,
+      isPrimary,
+      // Anchor spread along the pill edge facing the cursor
+      anchorSpread: spread * 78 + (r() - 0.5) * 18,
+      // Attachment offset around the cursor tip / hand
+      tipAngle: r() * Math.PI * 2,
+      tipRadius: isPrimary ? (3 + r() * 7) : (6 + r() * 14),
+      // Thickness & breaking personality
+      baseWidth: isPrimary ? (5.2 + r() * 3.0) : (2.2 + r() * 2.2),
+      rootFlare: isPrimary ? (14 + r() * 7) : (8 + r() * 5),
+      maxStretchFactor: (isPrimary ? 1.02 : 0.78) + r() * 0.34,
+      reachDelay: (isPrimary ? 0 : 0.08) + r() * 0.28,
+      reachSpeed: 3.8 + r() * 2.2,
+      // Organic wobble & sag personality
+      phase: r() * Math.PI * 2,
+      freq: 1.8 + r() * 2.1,
+      bend: (r() - 0.5) * 2.0,
+      sag: 0.45 + r() * 0.9,
+      stiffness: isPrimary ? (58 + r() * 28) : (72 + r() * 36),
+      // Runtime FSM state: 'idle' | 'reaching' | 'attached' | 'recoiling'
+      state: 'idle',
+      cooldown: 0,
+      progress: 0,
+      strain: 0,
+      breakPoint: 0.5,
+      // Smoothed root anchor on pill edge
+      ax: 0, ay: 0, anx: 0, any: -1,
+      // Dynamic tip particle
+      tx: 0, ty: 0, tvx: 0, tvy: 0,
+      // Two spring control points for organic cubic Bezier curves
+      c1x: 0, c1y: 0, c1vx: 0, c1vy: 0,
+      c2x: 0, c2y: 0, c2vx: 0, c2vy: 0,
+      init: false
+    });
+  }
+
+  const droplets = [];
+  const ripples = [];
+
+  function spawnDroplet(x, y, vx, vy, radius) {
+    if (droplets.length >= CONFIG.maxDroplets) droplets.shift();
+    droplets.push({
+      x, y, vx, vy,
+      r: radius,
+      life: 1,
+      decay: 2.2 + Math.random() * 1.6
+    });
+  }
+
+  function spawnSurfaceRipple(x, y, nx, ny, size) {
+    if (ripples.length >= CONFIG.maxRipples) ripples.shift();
+    ripples.push({
+      x, y, nx, ny,
+      size,
+      t: 0,
+      duration: 0.48
+    });
+  }
+
+  // ---- Organic Cubic Bezier Ribbon Renderer (Zero Beading, Glossy Highlights) ----
+  const ribbonLeftX = new Float32Array(21);
+  const ribbonLeftY = new Float32Array(21);
+  const ribbonRightX = new Float32Array(21);
+  const ribbonRightY = new Float32Array(21);
+  const spineXArr = new Float32Array(21);
+  const spineYArr = new Float32Array(21);
+
+  function drawTendril(s, now) {
+    const N = 20;
+    const ax = s.ax, ay = s.ay;
+    const tx = s.tx, ty = s.ty;
+    const chordX = tx - ax;
+    const chordY = ty - ay;
+    const chordLen = Math.hypot(chordX, chordY);
+    if (chordLen < 2) return;
+
+    const px = -chordY / chordLen;
+    const py = chordX / chordLen;
+    const strain = clamp(s.strain, 0, 1);
+    const isAttached = s.state === 'attached';
+    const isRecoiling = s.state === 'recoiling';
+
+    // Attenuate surface wave ripple as tension pulls the strand taut
+    const slack = Math.pow(1 - strain, 1.7);
+    const waveAmp = reduceMotion ? 0 : (isRecoiling ? 4.2 : 2.8 * slack) * sc0;
+
+    // Sample cubic Bezier spine with travelling organic ripple
+    for (let j = 0; j <= N; j++) {
+      const t = j / N;
+      const u = 1 - t;
+      const u2 = u * u, u3 = u2 * u;
+      const t2 = t * t, t3 = t2 * t;
+
+      let x = u3 * ax + 3 * u2 * t * s.c1x + 3 * u * t2 * s.c2x + t3 * tx;
+      let y = u3 * ay + 3 * u2 * t * s.c1y + 3 * u * t2 * s.c2y + t3 * ty;
+
+      if (waveAmp > 0.05) {
+        const env = 4 * t * u; // 0 at both ends, 1 in middle
+        const rip = Math.sin(t * 8.5 - now * 6.5 + s.phase) * waveAmp * env;
+        x += px * rip;
+        y += py * rip;
+      }
+
+      spineXArr[j] = x;
+      spineYArr[j] = y;
+    }
+
+    // Compute volume-conserving width profile:
+    // - Wide meniscus flare at the pill root (t = 0) for seamless liquid merging
+    // - Hyperbolic thinning toward the middle under stretch tension
+    // - Subtle wet flare at cursor attachment (t = 1) or teardrop bead while reaching/recoiling
+    const volumeThin = 1 / Math.sqrt(1 + strain * 3.8);
+    const recoilThicken = isRecoiling ? (1.2 + 0.55 * (1 - clamp(chordLen / 120, 0, 1))) : 1;
+
+    for (let j = 0; j <= N; j++) {
+      const t = j / N;
+      // Tangent vector from neighboring spine samples
+      const i0 = Math.max(0, j - 1);
+      const i1 = Math.min(N, j + 1);
+      const dtx = spineXArr[i1] - spineXArr[i0];
+      const dty = spineYArr[i1] - spineYArr[i0];
+      const dLen = Math.hypot(dtx, dty) || 1;
+      const nx = -dty / dLen;
+      const ny = dtx / dLen;
+
+      // Flared liquid root meniscus at pill edge (t near 0)
+      const rootMeniscus = Math.pow(1 - t, 5.2) * s.rootFlare * sc0 * (1 - 0.25 * strain);
+
+      // Cursor-end attachment meniscus (attached) or bulbous liquid tip (reaching/recoiling)
+      const tipMeniscus = isAttached
+        ? Math.pow(t, 5.5) * (s.baseWidth * 0.95) * sc0 * (1 - 0.35 * strain)
+        : Math.pow(t, 4.0) * (s.baseWidth * 0.55) * sc0;
+
+      // Neck pinch around s.breakPoint (deepens dramatically as strain approaches 1)
+      const neckDist = (t - s.breakPoint) / 0.28;
+      const neckBell = Math.exp(-neckDist * neckDist);
+      const neckFactor = 1 - strain * 0.72 * neckBell;
+
+      const coreRadius = s.baseWidth * 0.5 * sc0 * volumeThin * recoilThicken * neckFactor;
+      const halfW = Math.max(0.42, rootMeniscus * 0.5 + coreRadius + tipMeniscus * 0.5);
+
+      ribbonLeftX[j] = spineXArr[j] + nx * halfW;
+      ribbonLeftY[j] = spineYArr[j] + ny * halfW;
+      ribbonRightX[j] = spineXArr[j] - nx * halfW;
+      ribbonRightY[j] = spineYArr[j] - ny * halfW;
+    }
+
+    // 1. Subtle soft contact shadow under the liquid strand
+    ctx.beginPath();
+    ctx.moveTo(ribbonLeftX[0], ribbonLeftY[0] + 6 * sc0);
+    for (let j = 1; j <= N; j++) ctx.lineTo(ribbonLeftX[j], ribbonLeftY[j] + 6 * sc0);
+    for (let j = N; j >= 0; j--) ctx.lineTo(ribbonRightX[j], ribbonRightY[j] + 6 * sc0);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(55, 48, 95, 0.13)';
+    ctx.fill();
+
+    // 2. Main glossy obsidian liquid body (solid fill => zero alpha-overlap beading)
+    ctx.beginPath();
+    ctx.moveTo(ribbonLeftX[0], ribbonLeftY[0]);
+    for (let j = 1; j <= N; j++) ctx.lineTo(ribbonLeftX[j], ribbonLeftY[j]);
+    // Smooth rounded tip cap
+    const tipR = Math.max(
+      1.1,
+      Math.hypot(ribbonLeftX[N] - ribbonRightX[N], ribbonLeftY[N] - ribbonRightY[N]) * 0.5
+    );
+    const tipAngle = Math.atan2(ribbonRightY[N] - ribbonLeftY[N], ribbonRightX[N] - ribbonLeftX[N]);
+    ctx.arc(spineXArr[N], spineYArr[N], tipR, tipAngle + Math.PI, tipAngle, false);
+    for (let j = N; j >= 0; j--) ctx.lineTo(ribbonRightX[j], ribbonRightY[j]);
+    ctx.closePath();
+    ctx.fillStyle = '#060609';
+    ctx.fill();
+
+    // 3. Curved glossy wet specular highlight ridge along the upper-left side of the liquid strand
+    ctx.beginPath();
+    for (let j = 1; j < N; j++) {
+      const lx = lerp(spineXArr[j], ribbonLeftX[j], 0.42) - 0.4;
+      const ly = lerp(spineYArr[j], ribbonLeftY[j], 0.42) - 0.5;
+      if (j === 1) ctx.moveTo(lx, ly);
+      else ctx.lineTo(lx, ly);
+    }
+    const specAlpha = clamp((0.28 - strain * 0.1) * (s.isPrimary ? 1.05 : 0.8), 0.12, 0.34);
+    ctx.strokeStyle = `rgba(210, 224, 255, ${specAlpha.toFixed(3)})`;
+    ctx.lineWidth = Math.max(0.65, s.baseWidth * 0.18 * sc0 * volumeThin);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // 4. Tiny glossy wet glint on the cursor-end bead or recoiling teardrop tip
+    if (tipR > 1.8) {
+      ctx.beginPath();
+      ctx.arc(spineXArr[N] - tipR * 0.28, spineYArr[N] - tipR * 0.3, tipR * 0.32, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(235, 242, 255, 0.34)';
+      ctx.fill();
+    }
+  }
+
+  // Draws organic liquid surface bulges & reabsorption ripples along the pill's outer perimeter
+  function drawSurfaceEffects(edgeInfo, proximityGlow) {
+    // Subtle organic liquid swell on the pill edge facing the approaching cursor
+    if (proximityGlow > 0.02) {
+      const bulgeR = (10 + 14 * proximityGlow) * sc0;
+      const bx = edgeInfo.edgeX - edgeInfo.nx * (bulgeR * 0.42);
+      const by = edgeInfo.edgeY - edgeInfo.ny * (bulgeR * 0.42);
+
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(Math.atan2(edgeInfo.ny, edgeInfo.nx));
+      ctx.beginPath();
+      ctx.ellipse(0, 0, bulgeR * 0.55, bulgeR * 1.45, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#060609';
+      ctx.fill();
+
+      // Subtle glossy highlight on the emerging liquid bulge
+      ctx.beginPath();
+      ctx.ellipse(-bulgeR * 0.08, -bulgeR * 0.45, bulgeR * 0.16, bulgeR * 0.52, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(205, 220, 255, ${(0.22 * proximityGlow).toFixed(3)})`;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Damped liquid absorption ripples where broken strands snapped back into the pill
+    for (let i = 0; i < ripples.length; i++) {
+      const rp = ripples[i];
+      const u = rp.t / rp.duration;
+      const amp = Math.sin(u * Math.PI * 2.5) * Math.exp(-u * 4.2);
+      const rOut = Math.max(0.5, rp.size * (0.45 + 0.55 * Math.abs(amp)));
+
+      ctx.save();
+      ctx.translate(rp.x, rp.y);
+      ctx.rotate(Math.atan2(rp.ny, rp.nx));
+      ctx.beginPath();
+      ctx.ellipse(amp * 4 * sc0, 0, rOut * 0.55, rOut * 1.35 * (1 + u * 0.7), 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#060609';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Draws small glossy residue droplets spawned during strand rupture
+  function drawDroplets() {
+    for (let i = 0; i < droplets.length; i++) {
+      const d = droplets[i];
+      const r = d.r * d.life;
+      if (r < 0.45) continue;
+
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#060609';
+      ctx.fill();
+
+      if (r > 1.3) {
+        ctx.beginPath();
+        ctx.arc(d.x - r * 0.28, d.y - r * 0.3, r * 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(230, 240, 255, ${(0.42 * d.life).toFixed(3)})`;
+        ctx.fill();
+      }
+    }
+  }
+
+  // ---- Pill Rendering (reusing exact original visual identity) ----
+  function drawPillBase(sc) {
+    const hw = pillW / 2;
+    const hh = pillH / 2;
+    const cw = pillW + pillPad * 2;
+    const ch = pillH + pillPad * 2;
+
+    ctx.save();
+    ctx.translate(pill.x, pill.y);
+    ctx.scale(sc, sc);
+
+    // Draw cached static obsidian pill + shadow + reflections
+    ctx.drawImage(pillCache, -cw / 2, -ch / 2, cw, ch);
+
+    // Subtle dynamic specular sheen band reacting gently to cursor position
+    ctx.save();
+    ctx.beginPath();
+    rr(ctx, -hw, -hh, pillW, pillH, hh);
+    ctx.clip();
+    const bx = clamp(0.15 + pill.sheenOffset, -0.55, 0.65) * hw;
+    const g5 = ctx.createLinearGradient(bx - 45, 0, bx + 45, 0);
+    g5.addColorStop(0, 'rgba(255,255,255,0)');
+    g5.addColorStop(0.5, 'rgba(255,255,255,0.11)');
+    g5.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g5;
+    ctx.fillRect(bx - 45, -hh, 90, pillH);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  function drawPillLabel(sc) {
+    ctx.save();
+    ctx.translate(pill.x, pill.y);
+    ctx.scale(sc, sc);
+
+    const fs = pillH * 0.36;
+    ctx.font = '700 ' + fs + 'px Inter, "Helvetica Neue", Arial, sans-serif';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (-fs * 0.035) + 'px';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const gt = ctx.createLinearGradient(0, -fs / 2, 0, fs / 2);
+    gt.addColorStop(0, '#f6f5f0');
+    gt.addColorStop(1, '#c9c7bf');
+
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 3 * dpr;
+    ctx.fillStyle = gt;
+    ctx.fillText('let\u2019s collaborate', 0, pillH * 0.02);
+    ctx.restore();
+  }
+
+  // ---- Custom Cursors (reused verbatim from baseline, hoisted static shapes) ----
+  const HAND_SHAPES = [
+    [-8, 0, 6, 22, 3],
+    [-2, 9, 5.5, 14, 2.8],
+    [3.5, 11, 5.5, 13, 2.8],
+    [9, 13, 5, 12, 2.5],
+    [-8, 14, 22, 15, 6],
+    [-13.5, 17, 8, 10, 4]
+  ];
+
+  function drawHand(x, y, s, alpha) {
+    if (alpha < 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x + 5 * s, y);
+    ctx.scale(s, s);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0a0a0c';
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    for (let i = 0; i < HAND_SHAPES.length; i++) {
+      const sh = HAND_SHAPES[i];
+      rr(ctx, sh[0], sh[1], sh[2], sh[3], sh[4]);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = '#e9e4da';
+    ctx.beginPath();
+    for (let i = 0; i < HAND_SHAPES.length; i++) {
+      const sh = HAND_SHAPES[i];
+      rr(ctx, sh[0], sh[1], sh[2], sh[3], sh[4]);
+    }
+    ctx.fill('nonzero');
+
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = 'rgba(10,10,12,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(-2, 12); ctx.lineTo(-2, 22);
+    ctx.moveTo(3.5, 14); ctx.lineTo(3.5, 22);
+    ctx.moveTo(9, 16); ctx.lineTo(9, 22);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawArrow(x, y, alpha) {
+    if (alpha < 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 17);
+    ctx.lineTo(4.2, 13.2);
+    ctx.lineTo(7, 19.5);
+    ctx.lineTo(9.6, 18.4);
+    ctx.lineTo(6.8, 12.2);
+    ctx.lineTo(12, 12);
+    ctx.closePath();
+    ctx.fillStyle = '#0a0a0c';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- Physics Update Loop ----
+  let proximityLevel = 0;
+  let attachBlend = 0;
+  let prevTime = performance.now() / 1000;
+
+  function updateSimulation(now, dt) {
+    // Track cursor velocity smoothly (used for viscoelastic shear-breaking & sheen response)
+    const instVx = (cursor.x - cursor.prevX) / Math.max(dt, 0.004);
+    const instVy = (cursor.y - cursor.prevY) / Math.max(dt, 0.004);
+    const velLerp = 1 - Math.exp(-14 * dt);
+    cursor.vx = lerp(cursor.vx, cursor.active ? instVx : 0, velLerp);
+    cursor.vy = lerp(cursor.vy, cursor.active ? instVy : 0, velLerp);
+    cursor.speed = Math.hypot(cursor.vx, cursor.vy);
+    cursor.prevX = cursor.x;
+    cursor.prevY = cursor.y;
+
+    // Scale radii proportionally to pill size so desktop, laptop & tablet feel balanced
+    const actR = CONFIG.activationRadius * sc0;
+    const latchR = CONFIG.latchRadius * sc0;
+    const baseBreakLen = Math.min(CONFIG.baseMaxStretch * sc0, Math.min(W, H) * 0.44);
+
+    const edgeInfo = inspectPillEdge(cursor.x, cursor.y, pill.scale);
+    const inActivationZone = cursor.active && edgeInfo.edgeDist < actR;
+    const inLatchZone = cursor.active && edgeInfo.edgeDist < latchR;
+
+    const targetProx = inActivationZone
+      ? sstep(actR, latchR * 0.35, edgeInfo.edgeDist)
+      : 0;
+    proximityLevel += (targetProx - proximityLevel) * (1 - Math.exp(-6 * dt));
+
+    // Subtle sheen shift and micro-breath on the permanently centered pill
+    const targetSheen = cursor.active
+      ? clamp((cursor.x - pill.x) / (W * 0.45), -0.45, 0.45) * (0.35 + 0.65 * proximityLevel)
+      : 0;
+    pill.sheenOffset += (targetSheen - pill.sheenOffset) * (1 - Math.exp(-5 * dt));
+
+    // Tangent direction perpendicular to pill-to-cursor normal
+    const txDir = -edgeInfo.ny;
+    const tyDir = edgeInfo.nx;
+
+    const substeps = 2;
+    const hdt = dt / substeps;
+    let attachedCount = 0;
+
+    for (let i = 0; i < strands.length; i++) {
+      const s = strands[i];
+      if (s.cooldown > 0) s.cooldown = Math.max(0, s.cooldown - dt);
+
+      // Compute anchor on the pill edge facing the cursor (inset 4px so root meniscus fuses into body)
+      const desiredX = edgeInfo.edgeX + txDir * s.anchorSpread * sc0;
+      const desiredY = edgeInfo.edgeY + tyDir * s.anchorSpread * sc0;
+      const proj = projectToPillEdge(desiredX, desiredY, pill.scale, 4);
+
+      if (!s.init) {
+        s.ax = proj.x; s.ay = proj.y;
+        s.anx = proj.nx; s.any = proj.ny;
+        s.tx = proj.x; s.ty = proj.y;
+        s.c1x = proj.x; s.c1y = proj.y;
+        s.c2x = proj.x; s.c2y = proj.y;
+        s.init = true;
+      } else {
+        // Attached strands slide their root slightly slower for realistic viscous adhesion drag
+        const anchorRate = s.state === 'attached' ? 7 : 12;
+        const aLerp = 1 - Math.exp(-anchorRate * dt);
+        s.ax = lerp(s.ax, proj.x, aLerp);
+        s.ay = lerp(s.ay, proj.y, aLerp);
+        s.anx = proj.nx;
+        s.any = proj.ny;
+      }
+
+      // Target attachment point around the cursor
+      const tipOff = s.tipRadius * sc0;
+      const goalTipX = cursor.x + Math.cos(s.tipAngle) * tipOff;
+      const goalTipY = cursor.y + Math.sin(s.tipAngle) * tipOff;
+
+      // ---- State Transitions ----
+      if (s.state === 'idle') {
+        s.tx = s.ax; s.ty = s.ay;
+        s.c1x = s.ax; s.c1y = s.ay;
+        s.c2x = s.ax; s.c2y = s.ay;
+        s.tvx = s.tvy = s.c1vx = s.c1vy = s.c2vx = s.c2vy = 0;
+        s.progress = 0;
+        s.strain = 0;
+
+        if (inActivationZone && s.cooldown <= 0 && proximityLevel > s.reachDelay) {
+          s.state = 'reaching';
+          s.progress = 0.04;
+          s.breakPoint = 0.44 + Math.random() * 0.14;
+        }
+        continue;
+      }
+
+      if (s.state === 'reaching') {
+        if (!inActivationZone) {
+          // Cursor backed out before latch: retract smoothly
+          s.progress = Math.max(0, s.progress - dt * 3.6);
+          if (s.progress <= 0.02) {
+            s.state = 'idle';
+            continue;
+          }
+        } else {
+          // Reach smoothly toward cursor, capped at ~65% until inside latchRadius
+          const maxReach = inLatchZone ? 1.0 : clamp(0.28 + proximityLevel * 0.45, 0.25, 0.72);
+          s.progress += (maxReach - s.progress) * (1 - Math.exp(-s.reachSpeed * dt));
+        }
+
+        const targetX = lerp(s.ax, goalTipX, s.progress);
+        const targetY = lerp(s.ay, goalTipY, s.progress);
+
+        const kc = s.stiffness;
+        const cd = 2 * Math.sqrt(kc) * (reduceMotion ? 0.88 : 0.48);
+        for (let n = 0; n < substeps; n++) {
+          s.tvx += ((targetX - s.tx) * kc - s.tvx * cd) * hdt;
+          s.tvy += ((targetY - s.ty) * kc - s.tvy * cd) * hdt;
+          s.tx += s.tvx * hdt;
+          s.ty += s.tvy * hdt;
+        }
+
+        // Check if reaching tendril has caught the cursor
+        const distToGoal = Math.hypot(goalTipX - s.tx, goalTipY - s.ty);
+        if (inLatchZone && (s.progress > 0.86 || distToGoal < 24 * sc0)) {
+          s.state = 'attached';
+          s.progress = 1;
+        }
+        s.strain = 0;
+      } else if (s.state === 'attached') {
+        attachedCount++;
+
+        // Elastic tip tracking cursor attachment point
+        const kc = s.stiffness * 1.35;
+        const cd = 2 * Math.sqrt(kc) * (reduceMotion ? 0.9 : 0.42);
+        for (let n = 0; n < substeps; n++) {
+          s.tvx += ((goalTipX - s.tx) * kc - s.tvx * cd) * hdt;
+          s.tvy += ((goalTipY - s.ty) * kc - s.tvy * cd) * hdt;
+          s.tx += s.tvx * hdt;
+          s.ty += s.tvy * hdt;
+        }
+
+        const len = Math.hypot(s.tx - s.ax, s.ty - s.ay);
+        // Fast cursor flicks lower break threshold slightly (viscoelastic shear thinning)
+        const flickFactor = clamp(1 - cursor.speed * 0.00018, 0.72, 1.0);
+        const breakLen = baseBreakLen * s.maxStretchFactor * flickFactor;
+        const restLen = 36 * sc0;
+
+        s.strain = clamp((len - restLen) / Math.max(1, breakLen - restLen), 0, 1.1);
+
+        // Detach & break when stretched past tension threshold or pointer leaves viewport/touch ends
+        if (!cursor.active || len > breakLen) {
+          // Split strand at thinnest neck (s.breakPoint) for realistic recoil & droplet residue
+          const u = 1 - s.breakPoint;
+          const t = s.breakPoint;
+          const breakX = u * u * u * s.ax + 3 * u * u * t * s.c1x + 3 * u * t * t * s.c2x + t * t * t * s.tx;
+          const breakY = u * u * u * s.ay + 3 * u * u * t * s.c1y + 3 * u * t * t * s.c2y + t * t * t * s.ty;
+
+          // Spawn 1-2 tiny glossy droplets from the snapped neck / cursor residue
+          spawnDroplet(
+            lerp(breakX, s.tx, 0.35),
+            lerp(breakY, s.ty, 0.35),
+            cursor.vx * 0.14 + (Math.random() - 0.5) * 45,
+            cursor.vy * 0.14 + 25 + Math.random() * 40,
+            (s.isPrimary ? 2.6 : 1.7) * sc0
+          );
+
+          // Pill-side half whips back elastically from the break point
+          const dirX = (s.ax - breakX) / (Math.hypot(s.ax - breakX, s.ay - breakY) || 1);
+          const dirY = (s.ay - breakY) / (Math.hypot(s.ax - breakX, s.ay - breakY) || 1);
+          const whipSpeed = (280 + len * 1.15);
+
+          s.tx = breakX;
+          s.ty = breakY;
+          s.tvx = dirX * whipSpeed + (Math.random() - 0.5) * 75;
+          s.tvy = dirY * whipSpeed + (Math.random() - 0.5) * 75;
+          s.state = 'recoiling';
+          s.strain = 0.25;
+        }
+      } else if (s.state === 'recoiling') {
+        // Underdamped elastic snap-back into the pill body
+        const kc = 145;
+        const cd = 2 * Math.sqrt(kc) * (reduceMotion ? 0.92 : 0.44);
+        for (let n = 0; n < substeps; n++) {
+          s.tvx += ((s.ax - s.tx) * kc - s.tvx * cd) * hdt;
+          s.tvy += ((s.ay - s.ty) * kc - s.tvy * cd) * hdt;
+          s.tx += s.tvx * hdt;
+          s.ty += s.tvy * hdt;
+        }
+
+        const remDist = Math.hypot(s.tx - s.ax, s.ty - s.ay);
+        s.strain = Math.max(0, s.strain - dt * 2.5);
+
+        // Once snapped tip reaches the pill edge, absorb it with a liquid ripple
+        if (remDist < 12 * sc0) {
+          spawnSurfaceRipple(s.ax, s.ay, s.anx, s.any, (s.isPrimary ? 10 : 6.5) * sc0);
+          s.state = 'idle';
+          s.cooldown = 0.35 + Math.random() * 0.4;
+          continue;
+        }
+      }
+
+      // ---- Update Cubic Bezier Control Points (Organic Curves, Gravity Sag, Tautening) ----
+      const dx = s.tx - s.ax;
+      const dy = s.ty - s.ay;
+      const L = Math.hypot(dx, dy) || 1;
+      const px = -dy / L;
+      const py = dx / L;
+
+      const slack = Math.pow(1 - clamp(s.strain, 0, 1), 1.8);
+      const wob1 = reduceMotion ? 0 : Math.sin(now * s.freq + s.phase) * s.bend * L * 0.14 * slack;
+      const wob2 = reduceMotion ? 0 : Math.cos(now * s.freq * 0.85 + s.phase + 1.1) * s.bend * L * 0.12 * slack;
+      const sagAmt = L * 0.14 * s.sag * slack;
+
+      // Control point 1 emerges outward along pill surface normal for natural liquid departure
+      const normalPush = Math.min(L * 0.28, 38 * sc0) * (1 - 0.55 * clamp(s.strain, 0, 1));
+      const targetC1x = lerp(s.ax, s.tx, 0.32) + s.anx * normalPush + px * wob1;
+      const targetC1y = lerp(s.ay, s.ty, 0.32) + s.any * normalPush + py * wob1 + sagAmt * 0.7;
+
+      const targetC2x = lerp(s.ax, s.tx, 0.68) + px * wob2;
+      const targetC2y = lerp(s.ay, s.ty, 0.68) + py * wob2 + sagAmt;
+
+      const ck = s.state === 'recoiling' ? 85 : 44;
+      const cc = s.state === 'recoiling' ? 9.5 : 7.2;
+
+      for (let n = 0; n < substeps; n++) {
+        s.c1vx += ((targetC1x - s.c1x) * ck - s.c1vx * cc) * hdt;
+        s.c1vy += ((targetC1y - s.c1y) * ck - s.c1vy * cc) * hdt;
+        s.c1x += s.c1vx * hdt;
+        s.c1y += s.c1vy * hdt;
+
+        s.c2vx += ((targetC2x - s.c2x) * ck - s.c2vx * cc) * hdt;
+        s.c2vy += ((targetC2y - s.c2y) * ck - s.c2vy * cc) * hdt;
+        s.c2x += s.c2vx * hdt;
+        s.c2y += s.c2vy * hdt;
+      }
+    }
+
+    // Update breaking residue droplets
+    for (let i = droplets.length - 1; i >= 0; i--) {
+      const d = droplets[i];
+      d.vy += 260 * dt; // subtle gravity
+      d.vx *= Math.exp(-3.5 * dt);
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.life -= d.decay * dt;
+      if (d.life <= 0) droplets.splice(i, 1);
+    }
+
+    // Update pill surface absorption ripples
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      ripples[i].t += dt;
+      if (ripples[i].t >= ripples[i].duration) ripples.splice(i, 1);
+    }
+
+    // Smooth cursor morph & subtle living scale breath on centered pill
+    const attachRatio = clamp(attachedCount / 5, 0, 1);
+    attachBlend += (attachRatio - attachBlend) * (1 - Math.exp(-7 * dt));
+
+    const targetScale = 1
+      + (reduceMotion ? 0 : 0.028 * Math.max(proximityLevel * 0.5, attachBlend))
+      - pill.pressDip;
+    pill.pressDip *= Math.exp(-14 * dt);
+    pill.scale += (targetScale - pill.scale) * (1 - Math.exp(-6 * dt));
+
+    return { edgeInfo, attachRatio };
+  }
+
+  // ---- Main Render Loop ----
+  function frame() {
+    const now = performance.now() / 1000;
+    const dt = Math.min(now - prevTime, 1 / 30);
+    prevTime = now;
+
+    // Guarantee exact viewport center every frame (even during scroll/resize)
+    pill.x = W / 2;
+    pill.y = H / 2;
+
+    const { edgeInfo } = updateSimulation(now, dt);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // Layer 1: Base glossy pill body & shadow (fixed at exact center)
+    drawPillBase(pill.scale);
+
+    // Layer 2: Organic liquid bulges, ripples, Venom tendrils & droplets
+    // Clipped outside the pill's inner highlight area (6px inset) so roots melt seamlessly
+    // across the outer rim without ever smearing over interior reflections or label text
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    const clipInset = 6 * pill.scale;
+    const innerW = Math.max(2, pillW * pill.scale - clipInset * 2);
+    const innerH = Math.max(2, pillH * pill.scale - clipInset * 2);
+    rr(ctx, pill.x - innerW / 2, pill.y - innerH / 2, innerW, innerH, innerH / 2);
+    ctx.clip('evenodd');
+
+    const exteriorGlow = edgeInfo.signedDist > -4 ? proximityLevel : 0;
+    drawSurfaceEffects(edgeInfo, exteriorGlow);
+    for (let i = 0; i < strands.length; i++) {
+      if (strands[i].state !== 'idle') {
+        drawTendril(strands[i], now);
+      }
+    }
+    drawDroplets();
+    ctx.restore();
+
+    // Layer 3: Crisp "let's collaborate" label always clean above liquid edges
+    drawPillLabel(pill.scale);
+
+    // Layer 4: Existing custom desktop/laptop cursor (hidden on pure touch input)
+    if (cursor.active && !cursor.isTouch) {
+      drawArrow(cursor.x, cursor.y, 1 - sstep(0.15, 0.55, attachBlend));
+      drawHand(cursor.x, cursor.y, 1.15 * Math.max(sc0, 0.9), sstep(0.3, 0.78, attachBlend));
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  // Expose read-only inspection hooks for debugging & automated verification
+  window.__BLACK_MATTER__ = {
+    CONFIG,
+    getState() {
+      const counts = { idle: 0, reaching: 0, attached: 0, recoiling: 0 };
+      let maxStrain = 0;
+      for (const s of strands) {
+        counts[s.state]++;
+        if (s.strain > maxStrain) maxStrain = s.strain;
+      }
+      return {
+        viewport: { width: W, height: H, dpr },
+        pill: { x: pill.x, y: pill.y, width: pillW, height: pillH, scale: pill.scale },
+        cursor: { x: cursor.x, y: cursor.y, active: cursor.active },
+        proximityLevel,
+        attachBlend,
+        strands: counts,
+        maxStrain,
+        droplets: droplets.length,
+        ripples: ripples.length
+      };
+    }
+  };
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
