@@ -51,8 +51,32 @@ function buildOrganicNoiseField(width, height, seedOffset) {
   return out;
 }
 
-export function createLiquidField({ width, height, maskGrid }) {
+export function createLiquidField({ width, height, maskGrid, anchors = null }) {
   const size = width * height;
+
+  // Phase A: Pre-allocated Anatomical Anchors for full-body directional transformation
+  const validatedAnchors = [];
+  if (Array.isArray(anchors)) {
+    for (let i = 0; i < anchors.length; i++) {
+      const a = anchors[i];
+      const gx = Math.min(width - 1, Math.max(0, Math.round(a.u * (width - 1))));
+      const gy = Math.min(height - 1, Math.max(0, Math.round(a.v * (height - 1))));
+      const idx = gy * width + gx;
+      const maskVal = maskGrid ? maskGrid[idx] : 0;
+      validatedAnchors.push(Object.freeze({
+        id: a.id,
+        zone: a.zone,
+        name: a.name,
+        u: a.u,
+        v: a.v,
+        gx,
+        gy,
+        maskVal: Number(maskVal.toFixed(4)),
+        valid: maskVal >= 0.50
+      }));
+    }
+  }
+  Object.freeze(validatedAnchors);
 
   // Pre-allocated simulation buffers (zero per-frame allocations)
   const activeField = new Float32Array(size);
@@ -704,6 +728,7 @@ export function createLiquidField({ width, height, maskGrid }) {
     depositRootInfluence,
     getFieldCanvas: () => maskCanvas,
     getVeinCanvas: () => veinCanvas,
+    getAnchors: () => validatedAnchors,
     isActive: () => totalEnergy >= 0.005 || activeVeinCount > 0,
     getStats: () => ({
       width,

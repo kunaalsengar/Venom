@@ -74,7 +74,11 @@ const pointer = {
   nearPhoto: false,
   active: false,
   isTouch: false,
-  interacted: false
+  interacted: false,
+  // Phase A: Continuous Directional Zone Weights [0..1]
+  weightLeft: 0,
+  weightCenter: 0,
+  weightRight: 0
 };
 
 // Mode state (normal resting load is 'off' -> pure untouched original portrait)
@@ -109,10 +113,93 @@ const shadowCache = {
 };
 shadowCache.ctx = shadowCache.canvas.getContext('2d');
 
+// ---- Directional Zone Weight Calculation (Phase A) ----
+// Computes C1-continuous Hermite weights for Left, Center, and Right interaction zones.
+// Guaranteed properties:
+// 1. All weights in [0, 1], zero negative values.
+// 2. Partition of unity: left + center + right = 1.0 for all u.
+// 3. Center reaches exact global maximum of 1.0000 at u = 0.50.
+// 4. Smooth transitions: dW/du = 0 at all boundaries (0.32, 0.50, 0.68).
+export function computeZoneWeights(u) {
+  const cu = clamp(u, 0, 1);
+  let left = 0;
+  let right = 0;
+
+  if (cu <= 0.32) {
+    left = 1;
+  } else if (cu < 0.50) {
+    const t = (0.50 - cu) / 0.18;
+    left = t * t * (3 - 2 * t);
+  }
+
+  if (cu >= 0.68) {
+    right = 1;
+  } else if (cu > 0.50) {
+    const t = (cu - 0.50) / 0.18;
+    right = t * t * (3 - 2 * t);
+  }
+
+  const center = Math.max(0, Math.min(1, 1 - left - right));
+  return { left, center, right };
+}
+
+// Phase A: Pre-allocated Anatomical Anchors for Directional Full-Body Transformation
+// 11 anchors: 4 Left, 3 Center, 4 Right. Validated against actual maskGrid (mask = 1.000).
+export const ANATOMICAL_ANCHORS = Object.freeze([
+  // 4 Left anchors (viewer's left / subject's right flank)
+  Object.freeze({ id: 'left_shoulder', zone: 'left', name: 'Left Shoulder', u: 0.3049, v: 0.4587, gx: 55, gy: 105 }),
+  Object.freeze({ id: 'left_upper_torso', zone: 'left', name: 'Left Upper Torso', u: 0.3214, v: 0.6109, gx: 58, gy: 140 }),
+  Object.freeze({ id: 'left_forearm', zone: 'left', name: 'Left Forearm/Wrist', u: 0.2665, v: 0.7630, gx: 48, gy: 175 }),
+  Object.freeze({ id: 'left_lower_waist', zone: 'left', name: 'Left Lower Waist', u: 0.2555, v: 0.8935, gx: 46, gy: 205 }),
+
+  // 3 Center anchors (sternum, crossed arms, abdomen)
+  Object.freeze({ id: 'center_sternum', zone: 'center', name: 'Center Sternum/Plexus', u: 0.5027, v: 0.5457, gx: 91, gy: 125 }),
+  Object.freeze({ id: 'center_crossed_arms', zone: 'center', name: 'Center Crossed Arms', u: 0.5027, v: 0.7196, gx: 91, gy: 165 }),
+  Object.freeze({ id: 'center_mid_waist', zone: 'center', name: 'Center Mid-Waist', u: 0.5027, v: 0.8500, gx: 91, gy: 195 }),
+
+  // 4 Right anchors (viewer's right / subject's left flank)
+  Object.freeze({ id: 'right_shoulder', zone: 'right', name: 'Right Shoulder', u: 0.6896, v: 0.4587, gx: 125, gy: 105 }),
+  Object.freeze({ id: 'right_bicep', zone: 'right', name: 'Right Bicep', u: 0.7445, v: 0.6326, gx: 135, gy: 145 }),
+  Object.freeze({ id: 'right_forearm', zone: 'right', name: 'Right Forearm', u: 0.7170, v: 0.7630, gx: 130, gy: 175 }),
+  Object.freeze({ id: 'right_hip', zone: 'right', name: 'Right Hip/Waist', u: 0.6896, v: 0.8935, gx: 125, gy: 205 })
+]);
+
+export function validateAnatomicalAnchors(anchors, maskGrid, width, height) {
+  const validated = [];
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const gx = Math.min(width - 1, Math.max(0, Math.round(a.u * (width - 1))));
+    const gy = Math.min(height - 1, Math.max(0, Math.round(a.v * (height - 1))));
+    const idx = gy * width + gx;
+    const maskVal = maskGrid ? maskGrid[idx] : 0;
+    const valid = maskVal >= 0.50;
+    validated.push(Object.freeze({
+      id: a.id,
+      zone: a.zone,
+      name: a.name,
+      u: a.u,
+      v: a.v,
+      gx,
+      gy,
+      maskVal: Number(maskVal.toFixed(4)),
+      valid
+    }));
+  }
+  return Object.freeze(validated);
+}
+
 // ---- Coordinate Mapping Helpers (Single Source of Truth: photoRect) ----
 export function clientToUV(clientX, clientY) {
   if (photoRect.w <= 0 || photoRect.h <= 0) {
-    return { u: 0, v: 0, insidePhoto: false, nearPhoto: false };
+    return {
+      u: 0,
+      v: 0,
+      insidePhoto: false,
+      nearPhoto: false,
+      weightLeft: 0,
+      weightCenter: 0,
+      weightRight: 0
+    };
   }
   const u = (clientX - photoRect.x) / photoRect.w;
   const v = (clientY - photoRect.y) / photoRect.h;
@@ -122,7 +209,17 @@ export function clientToUV(clientX, clientY) {
   const padV = CONFIG.pointerMarginRatio * ASSET_ASPECT;
   const nearPhoto = u >= -padU && u <= 1 + padU && v >= -padV && v <= 1 + padV;
 
-  return { u, v, insidePhoto, nearPhoto };
+  const { left, center, right } = computeZoneWeights(u);
+
+  return {
+    u,
+    v,
+    insidePhoto,
+    nearPhoto,
+    weightLeft: left,
+    weightCenter: center,
+    weightRight: right
+  };
 }
 
 export function uvToCanvas(u, v) {
@@ -495,6 +592,9 @@ function handleResize() {
     pointer.prevV = mapped.v;
     pointer.insidePhoto = mapped.insidePhoto;
     pointer.nearPhoto = mapped.nearPhoto;
+    pointer.weightLeft = mapped.weightLeft;
+    pointer.weightCenter = mapped.weightCenter;
+    pointer.weightRight = mapped.weightRight;
   }
 
   render();
@@ -526,6 +626,9 @@ function updatePointer(ev, isDown) {
   pointer.v = mapped.v;
   pointer.insidePhoto = mapped.insidePhoto;
   pointer.nearPhoto = mapped.nearPhoto;
+  pointer.weightLeft = mapped.weightLeft;
+  pointer.weightCenter = mapped.weightCenter;
+  pointer.weightRight = mapped.weightRight;
 
   if (!wasActive || isDown) {
     pointer.prevU = mapped.u;
@@ -553,6 +656,9 @@ function clearPointer() {
   pointer.nearPhoto = false;
   pointer.du = 0;
   pointer.dv = 0;
+  pointer.weightLeft = 0;
+  pointer.weightCenter = 0;
+  pointer.weightRight = 0;
   // Keep loop alive until tendrils recoil cleanly and Living Memory self-heals back to rest
   if (
     appState.debugMode === 'off' &&
@@ -621,11 +727,12 @@ async function init() {
     assets.alphaMaskCanvas = alphaCanvas;
     assets.maskStats = stats;
 
-    // Initialize living liquid field reusing the already-built 182x230 maskGrid
+    // Initialize living liquid field reusing the already-built 182x230 maskGrid and pre-allocated anchors
     liquidField = createLiquidField({
       width: CONFIG.fieldWidth,
       height: CONFIG.fieldHeight,
-      maskGrid: assets.maskGrid
+      maskGrid: assets.maskGrid,
+      anchors: ANATOMICAL_ANCHORS
     });
 
     // Initialize dynamic spring-chain tendril system anchored to the living liquid field
@@ -643,7 +750,7 @@ async function init() {
   }
 }
 
-// Read-only inspection & dev debug controls (preserved + extended with tendril telemetry)
+// Read-only inspection & dev debug controls (preserved + extended with zone telemetry)
 window.__BLACK_MATTER__ = {
   phase: 'phase3-step4',
   CONFIG,
@@ -653,6 +760,9 @@ window.__BLACK_MATTER__ = {
   uvToFieldCell,
   fieldCellToCanvas,
   sampleMaskAtUV,
+  computeZoneWeights,
+  ANATOMICAL_ANCHORS,
+  validateAnatomicalAnchors,
   setDebugMode,
   getDebugMode: () => appState.debugMode,
   resetField,
@@ -677,6 +787,12 @@ window.__BLACK_MATTER__ = {
       },
       maskStats: assets.maskStats ? { ...assets.maskStats } : null,
       pointer: { ...pointer },
+      zoneWeights: {
+        left: pointer.weightLeft,
+        center: pointer.weightCenter,
+        right: pointer.weightRight
+      },
+      anatomicalAnchors: liquidField ? liquidField.getAnchors() : ANATOMICAL_ANCHORS,
       liquid: liquidField ? liquidField.getStats() : null,
       tendrils: tendrilSystem ? tendrilSystem.getStats() : null,
       canvasCount: document.querySelectorAll('canvas').length

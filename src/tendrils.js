@@ -192,9 +192,10 @@ export function createTendrilSystem({ liquidField, aspectRatio }) {
     const isHeavy = r3 > 0.55;
     slot.baseWidth = isHeavy ? (0.0115 + r4 * 0.0055) : (0.0068 + r4 * 0.0040);
     slot.rootFlare = slot.baseWidth * (2.05 + r1 * 0.55);
-    slot.restLen = 0.085 + r2 * 0.065;
-    // Individual break limits (staggered snapping — never all at identical distance!)
-    slot.maxExtension = (isHeavy ? 0.30 : 0.23) + r3 * 0.14;
+    slot.restLen = 0.080 + r2 * 0.055;
+    // Individual break limits calibrated to organic 1.8–2.2x extension target
+    const rawMaxExt = (isHeavy ? 0.19 : 0.15) + r3 * 0.08;
+    slot.maxExtension = clamp(rawMaxExt, slot.restLen * 1.80, slot.restLen * 2.20);
     slot.growDuration = 0.17 + r4 * 0.14;
     slot.bendDir = r1 > 0.5 ? 1 : -1;
     slot.bendAmp = 0.024 + r2 * 0.032;
@@ -270,7 +271,7 @@ export function createTendrilSystem({ liquidField, aspectRatio }) {
     slot.baseWidth = parent.baseWidth * (0.46 + r1 * 0.18);
     slot.rootFlare = slot.baseWidth * 1.75;
     slot.restLen = parent.restLen * (0.42 + r2 * 0.22);
-    slot.maxExtension = slot.restLen * 1.95;
+    slot.maxExtension = slot.restLen * 1.55;
     slot.growDuration = 0.22 + r3 * 0.14;
     slot.bendDir = side;
     slot.bendAmp = 0.018 + r2 * 0.022;
@@ -374,15 +375,15 @@ export function createTendrilSystem({ liquidField, aspectRatio }) {
     const tension = clamp(t.tension, 0, 1.15);
     const isRecoiling = t.state === TENDRIL_STATE.RECOILING || t.state === TENDRIL_STATE.SNAPPING;
     // Volume-conserving longitudinal thinning under tension; thickens slightly as it recoils
-    const volumeThin = 1 / Math.sqrt(1 + tension * 2.85);
+    const volumeThin = 1 / Math.sqrt(1 + tension * 1.80);
     const recoilThicken = isRecoiling ? (1.12 + 0.35 * (1 - clamp(t.arcLen / 0.14, 0, 1))) : 1.0;
 
     for (let k = 0; k < SEG_COUNT; k++) {
       const s = k / (SEG_COUNT - 1);
       // Wide liquid root flare blending into symbiote body
       const rootMerge = Math.pow(1 - s, 4.2) * t.rootFlare * (1 - 0.22 * tension);
-      // Natural mid-strand necking under high stretch tension
-      const neckPinch = 1 - tension * 0.56 * Math.sin(s * Math.PI);
+      // Natural mid-strand necking under high stretch tension (calibrated to preserve visible muscular body)
+      const neckPinch = 1 - tension * 0.38 * Math.sin(s * Math.PI);
       // Taper cleanly to a pointed biological tip
       const tipTaper = Math.pow(1 - s * 0.88, 0.92);
       const body = t.baseWidth * volumeThin * recoilThicken * neckPinch * tipTaper;
@@ -525,11 +526,13 @@ export function createTendrilSystem({ liquidField, aspectRatio }) {
           if (!cursorActive) {
             startRecoil(t);
           } else {
-            // Elastic resistance near stretch limit subtly pulls tip back toward root
-            const resist = clamp((t.tension - 0.55) / 0.45, 0, 1) * 0.14;
+            // Progressive nonlinear elastic resistance pulling tip back toward root as stretch limit nears
+            // Smoothly ramps up to 0.48 max resistance; zero resistance below 0.45 tension for full responsiveness
+            const tNorm = clamp((t.tension - 0.45) / 0.55, 0, 1);
+            const resist = tNorm * tNorm * 0.48;
             goalTipU = rawTargetU + (t.rootU - rawTargetU) * resist;
             goalTipV = rawTargetV + (t.rootV - rawTargetV) * resist;
-            tipK = t.stiffness * (1.15 - resist * 1.4);
+            tipK = t.stiffness * (1.10 - resist * 0.60);
             tipC = 2 * Math.sqrt(tipK) * (reduceMotion ? 0.88 : 0.48);
           }
         } else if (t.state === TENDRIL_STATE.SNAPPING) {
