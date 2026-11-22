@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>SYMBIOTE HAND — Venom Cinematic Experience</title>
+  <style>
+    /* ---- Base Reset ---- */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #020204;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #e5e7eb;
+    }
+
+    /* ---- Hidden Processing Video Feed ---- */
+    #webcam-video {
+      position: absolute;
+      top: -9999px;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0.001;
+      pointer-events: none;
+    }
+
+    /* ---- WebGL Display Canvas (Main Fullscreen Viewport) ---- */
+    #webgl-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      cursor: crosshair;
+      z-index: 2;
+    }
+
+    /* ---- Minimalist Monospace HUD (Top-Left) ---- */
+    #hud {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      z-index: 10;
+      font-family: "SF Mono", Monaco, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: #d1d5db;
+      background: rgba(4, 4, 8, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 6px 12px;
+      border-radius: 4px;
+      pointer-events: auto;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    #hud.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-4px);
+    }
+    .hud-title {
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .hud-accent {
+      color: #60a5fa;
+      font-weight: 700;
+    }
+    .hud-fps {
+      color: #f3f4f6;
+    }
+    .hud-dim {
+      color: #6b7280;
+    }
+    .hud-btn {
+      background: transparent;
+      border: none;
+      color: #93c5fd;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      text-decoration: underline;
+      padding: 0 2px;
+    }
+    .hud-btn:hover {
+      color: #ffffff;
+    }
+
+    /* ---- Notification / Status Pill ---- */
+    #status-banner {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      padding: 6px 14px;
+      background: rgba(10, 10, 16, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-radius: 16px;
+      font-family: "SF Mono", Monaco, monospace;
+      font-size: 11px;
+      color: #9ca3af;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      transition: opacity 0.3s ease;
+    }
+    #status-banner.warning {
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fef3c7;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
+    #status-banner.warning .status-dot {
+      background: #f59e0b;
+      box-shadow: 0 0 6px #f59e0b;
+    }
+
+    /* ---- Initial Loading Screen ---- */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #020204;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s;
+    }
+    #loading-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .symbiote-spinner {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      position: relative;
+      background: radial-gradient(circle at 35% 35%, #1f2937, #020205 70%);
+      box-shadow: 0 0 28px rgba(255, 255, 255, 0.15), inset 0 0 14px rgba(255, 255, 255, 0.1);
+      animation: symbiotePulse 2.4s ease-in-out infinite;
+    }
+    .symbiote-spinner::after {
+      content: "";
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: #ffffff;
+      border-right-color: rgba(255, 255, 255, 0.3);
+      animation: spinnerRotate 1.2s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+    }
+    @keyframes spinnerRotate {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes symbiotePulse {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.1)); }
+      50% { transform: scale(1.06); filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.3)); }
+    }
+    .loading-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #ffffff;
+      text-shadow: 0 0 14px rgba(255, 255, 255, 0.4);
+    }
+    .loading-msg {
+      font-size: 12px;
+      color: #9ca3af;
+      max-width: 320px;
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+
+  <!-- Pinned Import Map (Three.js 0.160.0 + Examples Addons + MediaPipe 0.10.14) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Hidden Camera Video Element for MediaPipe & VideoTexture -->
+  <video id="webcam-video" playsinline muted autoplay></video>
+
+  <!-- Main Three.js Canvas -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- Minimalist Monospace HUD -->
+  <div id="hud">
+    <span class="hud-title">SYMBIOTE</span>
+    <span class="hud-dim">//</span>
+    <span id="gesture-display" class="hud-accent">IDLE</span>
+    <span class="hud-dim">&bull;</span>
+    <span id="fps-display" class="hud-fps">-- FPS</span>
+    <span class="hud-dim">&bull;</span>
+    <span id="tracking-display">WEBCAM</span>
+    <span class="hud-dim">&bull;</span>
+    <span class="hud-dim">[H: hide | <button id="toggle-fallback-btn" class="hud-btn">M: mouse</button>]</span>
+  </div>
+
+  <!-- Notification Banner -->
+  <div id="status-banner">
+    <span class="status-dot"></span>
+    <span id="status-text">Initializing MediaPipe Vision &amp; Camera...</span>
+  </div>
+
+  <!-- Loading Screen Overlay -->
+  <div id="loading-overlay">
+    <div class="symbiote-spinner"></div>
+    <div class="loading-title">Black Matter</div>
+    <div id="loading-desc" class="loading-msg">Loading MediaPipe WASM &amp; GPU Hand Landmarker...</div>
+  </div>
+
+  <!-- Application Module Script -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+    // =========================================================================
+    // SECTION 1: GLOBAL CONFIGURATION
+    // =========================================================================
+    const CONFIG = Object.freeze({
+      // MediaPipe CDN Assets
+      wasmPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
+      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+
+      // Accent Particle System Parameters (reduced to ~3,000 droplets)
+      particleCount: 3000,
+      particleBaseSize: 11.0,
+
+      // Pinch Sticky Strands & Thresholds
+      pinchThreshold: 0.25,        // d / handSize < 0.25 = PINCH
+      pinchSnapThreshold: 1.25,    // d / handSize > 1.25 = SNAP
+      spreadSpeedThreshold: 1.85,  // Fast hand speed triggers SPREAD burst
+      hysteresisFrames: 3,         // Consecutive stable frames required to commit gesture
+
+      // Camera & Rendering
+      cameraFov: 50,
+      cameraZ: 4.8,
+      maxDpr: 2,
+      initialResScale: 0.65,       // Raymarch render target scale (0.5 to 0.75)
+      maxRaymarchSteps: 48         // Strict 48 step cap for 60 FPS
+    });
+
+    // =========================================================================
+    // SECTION 2: DOM REFERENCES & RUNTIME STATE
+    // =========================================================================
+    const videoEl = document.getElementById('webcam-video');
+    const canvasEl = document.getElementById('webgl-canvas');
+    const hudEl = document.getElementById('hud');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingDesc = document.getElementById('loading-desc');
+    const statusBanner = document.getElementById('status-banner');
+    const statusText = document.getElementById('status-text');
+    const fpsDisplay = document.getElementById('fps-display');
+    const gestureDisplay = document.getElementById('gesture-display');
+    const trackingDisplay = document.getElementById('tracking-display');
+    const toggleFallbackBtn = document.getElementById('toggle-fallback-btn');
+
+    const state = {
+      isMouseFallback: false,
+      handDetected: false,
+      currentGesture: 'IDLE',      // 'IDLE', 'OPEN', 'FIST', 'PINCH', 'SPREAD'
+      pendingGesture: 'IDLE',
+      gestureStableCount: 0,
+      handSize: 0.8,
+      handSpeed: 0.0,
+      wristSpeed: 0.0,
+
+      // Gesture smooth morph weights (0.0 to 1.0)
+      fistFactor: 0.0,
+      openFactor: 0.0,
+      pinchFactor: 0.0,
+      spreadFactor: 0.0,
+      pinchDistanceRatio: 1.0,
+
+      // Smoothed 3D landmarks (21 points)
+      landmarks: Array.from({ length: 21 }, () => new THREE.Vector3(0, 0, 0)),
+      prevWrist: new THREE.Vector3(0, 0, 0),
+      palmCenter: new THREE.Vector3(0, 0, 0),
+      boundingRadius: 1.8,
+
+      // Dynamic adaptive resolution scaling
+      resScale: CONFIG.initialResScale,
+      hasVideoTexture: false
+    };
+
+    // Mouse Fallback Controller
+    const mouseInput = {
+      clientX: window.innerWidth * 0.5,
+      clientY: window.innerHeight * 0.5,
+      targetX: 0,
+      targetY: 0,
+      depthZ: 0,
+      isLeftDown: false,
+      isRightDown: false,
+      isSpaceDown: false,
+      speed: 0
+    };
+
+    // Performance telemetry
+    let lastTimeMs = performance.now();
+    let frameCount = 0;
+    let fpsTimer = 0;
+    let currentFps = 60;
+    const fpsHistory = [];
+
+    // =========================================================================
+    // SECTION 3: THREE.JS SETUP & CAMERAS
+    // =========================================================================
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvasEl,
+      alpha: true,
+      antialias: false,
+      powerPreference: 'high-performance'
+    });
+    const baseDpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDpr);
+    renderer.setPixelRatio(baseDpr);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Main 3D Perspective Scene
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      CONFIG.cameraFov,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    camera.position.set(0, 0, CONFIG.cameraZ);
+
+    // Orthographic Scene for Raymarching Quad
+    const sdfScene = new THREE.Scene();
+    const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    // Screen dimension helper at depth Z
+    function getFrustumSizeAt(depthZ) {
+      const dist = camera.position.z - depthZ;
+      const height = 2.0 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+      const width = height * camera.aspect;
+      return { width, height };
+    }
+
+    // Map normalized MediaPipe (u, v, z) into Three.js 3D world space
+    // NOTE: Hard constraint: u = 1.0 - landmark.x matches mirrored camera feed
+    function screenToWorld(u, v, zNorm, outVec) {
+      const worldZ = (zNorm !== undefined ? -zNorm * 1.8 : 0);
+      const f = getFrustumSizeAt(worldZ);
+      outVec.x = (u - 0.5) * f.width;
+      outVec.y = (0.5 - v) * f.height;
+      outVec.z = worldZ;
+      return outVec;
+    }
+
+    // =========================================================================
+    // SECTION 4: RAYMARCHED SYMBIOTE SKIN (Fullscreen SDF Fragment Shader)
+    // =========================================================================
+    // Render Target at 0.5 to 0.75 resolution
+    let rtWidth = Math.max(64, Math.round(window.innerWidth * state.resScale));
+    let rtHeight = Math.max(64, Math.round(window.innerHeight * state.resScale));
+
+    const sdfRenderTarget = new THREE.WebGLRenderTarget(rtWidth, rtHeight, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType
+    });
+
+    const landmarkUniforms = Array.from({ length: 21 }, () => new THREE.Vector3(0, 0, 0));
+
+    // Fullscreen Raymarch Quad Material
+    const sdfRaymarchMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      uniforms: {
+        uTime: { value: 0 },
+        uLandmarks: { value: landmarkUniforms },
+        uPalmCenter: { value: new THREE.Vector3(0, 0, 0) },
+        uBoundingRadius: { value: 1.8 },
+        uHandSize: { value: 0.8 },
+        uHandDetected: { value: 0.0 },
+        uFistFactor: { value: 0.0 },
+        uOpenFactor: { value: 0.0 },
+        uPinchFactor: { value: 0.0 },
+        uPinchRatio: { value: 1.0 },
+        uCameraPos: { value: camera.position },
+        uCameraWorldMatrix: { value: camera.matrixWorld },
+        uFovRad: { value: THREE.MathUtils.degToRad(CONFIG.cameraFov) },
+        uAspect: { value: window.innerWidth / window.innerHeight }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+
+        varying vec2 vUv;
+
+        uniform float uTime;
+        uniform vec3 uLandmarks[21];
+        uniform vec3 uPalmCenter;
+        uniform float uBoundingRadius;
+        uniform float uHandSize;
+        uniform float uHandDetected;
+        uniform float uFistFactor;
+        uniform float uOpenFactor;
+        uniform float uPinchFactor;
+        uniform float uPinchRatio;
+        uniform vec3 uCameraPos;
+        uniform mat4 uCameraWorldMatrix;
+        uniform float uFovRad;
+        uniform float uAspect;
+
+        // ---- SDF Primitive Functions ----
+        float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+          vec3 pa = p - a, ba = b - a;
+          float h = clamp(dot(pa, ba) / max(0.0001, dot(ba, ba)), 0.0, 1.0);
+          return length(pa - ba * h) - r;
+        }
+
+        float smin(float a, float b, float k) {
+          float h = clamp(0.5 + 0.5 * (b - a) / max(0.0001, k), 0.0, 1.0);
+          return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        // Analytical Ray-Sphere Intersection for Bounding Volume Acceleration
+        bool intersectBoundingSphere(vec3 ro, vec3 rd, vec3 center, float radius, out float tNear, out float tFar) {
+          vec3 oc = ro - center;
+          float b = dot(oc, rd);
+          float c = dot(oc, oc) - radius * radius;
+          float disc = b * b - c;
+          if (disc < 0.0) return false;
+          float s = sqrt(disc);
+          tNear = max(0.0, -b - s);
+          tFar = -b + s;
+          return tFar > tNear;
+        }
+
+        // Procedural Curl-like Writhing Vector for Tendril Spines
+        vec3 curlWrithe(vec3 p, float seed, float time) {
+          return vec3(
+            sin(p.y * 5.0 + time * 3.5 + seed) * 0.5 + cos(p.z * 4.0 + seed),
+            cos(p.x * 5.0 + time * 3.0 + seed) * 0.5 + sin(p.y * 4.0 + seed),
+            sin(p.x * 4.0 - time * 3.2 + seed) * 0.5 + cos(p.x * 3.5 + seed)
+          );
+        }
+
+        // ---- Scene Signed Distance Function ----
+        float mapScene(vec3 p) {
+          if (uHandDetected < 0.5) {
+            // Idle breathing symbiote sphere when hand is not in view
+            float idleRad = 0.55 * (1.0 + 0.08 * sin(uTime * 2.0));
+            float dIdle = length(p - uPalmCenter) - idleRad;
+            float idleWobble = (sin(p.x * 8.0 + uTime * 2.5) * 0.03 + cos(p.y * 9.0 - uTime * 2.0) * 0.03);
+            return dIdle + idleWobble;
+          }
+
+          // Thickness scale: FIST multiplies radius by ~1.4
+          float rScale = (1.0 + 0.40 * uFistFactor) * uHandSize;
+          float rBase = 0.076 * rScale;
+          float rMid  = 0.062 * rScale;
+          float rTip  = 0.048 * rScale;
+          float kSmooth = 0.038 * uHandSize;
+
+          float d = 1e5;
+
+          // 1. Thumb Chain (0 -> 1 -> 2 -> 3 -> 4)
+          d = smin(d, sdCapsule(p, uLandmarks[0], uLandmarks[1], rBase * 1.05), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[1], uLandmarks[2], rBase * 0.95), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[2], uLandmarks[3], rMid), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[3], uLandmarks[4], rTip), kSmooth);
+
+          // 2. Index Finger Chain (0 -> 5 -> 6 -> 7 -> 8)
+          d = smin(d, sdCapsule(p, uLandmarks[0], uLandmarks[5], rBase * 1.10), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[5], uLandmarks[6], rBase * 0.95), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[6], uLandmarks[7], rMid), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[7], uLandmarks[8], rTip), kSmooth);
+
+          // 3. Middle Finger Chain (0 -> 9 -> 10 -> 11 -> 12)
+          d = smin(d, sdCapsule(p, uLandmarks[0], uLandmarks[9], rBase * 1.15), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[9], uLandmarks[10], rBase * 0.98), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[10], uLandmarks[11], rMid), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[11], uLandmarks[12], rTip), kSmooth);
+
+          // 4. Ring Finger Chain (0 -> 13 -> 14 -> 15 -> 16)
+          d = smin(d, sdCapsule(p, uLandmarks[0], uLandmarks[13], rBase * 1.05), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[13], uLandmarks[14], rBase * 0.92), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[14], uLandmarks[15], rMid), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[15], uLandmarks[16], rTip * 0.95), kSmooth);
+
+          // 5. Pinky Finger Chain (0 -> 17 -> 18 -> 19 -> 20)
+          d = smin(d, sdCapsule(p, uLandmarks[0], uLandmarks[17], rBase * 0.95), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[17], uLandmarks[18], rBase * 0.85), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[18], uLandmarks[19], rMid * 0.90), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[19], uLandmarks[20], rTip * 0.85), kSmooth);
+
+          // 6. Palm Webbing & Central Volume
+          d = smin(d, sdCapsule(p, uLandmarks[5], uLandmarks[9], rBase * 1.05), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[9], uLandmarks[13], rBase * 1.02), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[13], uLandmarks[17], rBase * 0.98), kSmooth);
+          d = smin(d, sdCapsule(p, uLandmarks[1], uLandmarks[5], rBase * 1.00), kSmooth);
+          d = smin(d, length(p - uPalmCenter) - (rBase * 1.35), kSmooth);
+
+          // 7. OPEN Gesture: 10 Tendrils Growing from Fingertips (2 per finger)
+          if (uOpenFactor > 0.02) {
+            float tendrilAmp = uOpenFactor * uHandSize;
+            float tLen = 0.28 * tendrilAmp;
+
+            // Fingertip pairs: [Tip, BaseJoint, Seed]
+            // Thumb: 4, 3
+            vec3 dirT = normalize(uLandmarks[4] - uLandmarks[3] + vec3(0.001));
+            vec3 wT1 = curlWrithe(uLandmarks[4], 1.2, uTime) * 0.35;
+            vec3 pT1 = uLandmarks[4] + (dirT + wT1) * tLen;
+            vec3 pT2 = pT1 + (dirT + curlWrithe(pT1, 2.4, uTime) * 0.45) * tLen;
+            d = smin(d, sdCapsule(p, uLandmarks[4], pT1, 0.022 * tendrilAmp), 0.025 * uHandSize);
+            d = smin(d, sdCapsule(p, pT1, pT2, 0.009 * tendrilAmp), 0.018 * uHandSize);
+
+            // Index: 8, 7
+            vec3 dirI = normalize(uLandmarks[8] - uLandmarks[7] + vec3(0.001));
+            vec3 wI1 = curlWrithe(uLandmarks[8], 3.5, uTime) * 0.35;
+            vec3 pI1 = uLandmarks[8] + (dirI + wI1) * tLen;
+            vec3 pI2 = pI1 + (dirI + curlWrithe(pI1, 4.8, uTime) * 0.45) * tLen;
+            d = smin(d, sdCapsule(p, uLandmarks[8], pI1, 0.024 * tendrilAmp), 0.025 * uHandSize);
+            d = smin(d, sdCapsule(p, pI1, pI2, 0.009 * tendrilAmp), 0.018 * uHandSize);
+
+            // Middle: 12, 11
+            vec3 dirM = normalize(uLandmarks[12] - uLandmarks[11] + vec3(0.001));
+            vec3 wM1 = curlWrithe(uLandmarks[12], 5.7, uTime) * 0.35;
+            vec3 pM1 = uLandmarks[12] + (dirM + wM1) * tLen;
+            vec3 pM2 = pM1 + (dirM + curlWrithe(pM1, 6.9, uTime) * 0.45) * tLen;
+            d = smin(d, sdCapsule(p, uLandmarks[12], pM1, 0.024 * tendrilAmp), 0.025 * uHandSize);
+            d = smin(d, sdCapsule(p, pM1, pM2, 0.009 * tendrilAmp), 0.018 * uHandSize);
+
+            // Ring: 16, 15
+            vec3 dirR = normalize(uLandmarks[16] - uLandmarks[15] + vec3(0.001));
+            vec3 wR1 = curlWrithe(uLandmarks[16], 7.3, uTime) * 0.35;
+            vec3 pR1 = uLandmarks[16] + (dirR + wR1) * tLen;
+            vec3 pR2 = pR1 + (dirR + curlWrithe(pR1, 8.1, uTime) * 0.45) * tLen;
+            d = smin(d, sdCapsule(p, uLandmarks[16], pR1, 0.022 * tendrilAmp), 0.025 * uHandSize);
+            d = smin(d, sdCapsule(p, pR1, pR2, 0.008 * tendrilAmp), 0.018 * uHandSize);
+
+            // Pinky: 20, 19
+            vec3 dirP = normalize(uLandmarks[20] - uLandmarks[19] + vec3(0.001));
+            vec3 wP1 = curlWrithe(uLandmarks[20], 9.2, uTime) * 0.35;
+            vec3 pP1 = uLandmarks[20] + (dirP + wP1) * tLen;
+            vec3 pP2 = pP1 + (dirP + curlWrithe(pP1, 10.4, uTime) * 0.45) * tLen;
+            d = smin(d, sdCapsule(p, uLandmarks[20], pP1, 0.020 * tendrilAmp), 0.025 * uHandSize);
+            d = smin(d, sdCapsule(p, pP1, pP2, 0.007 * tendrilAmp), 0.018 * uHandSize);
+          }
+
+          // 8. PINCH Gesture: Sticky Hyperbolic-Necking Bridge between Thumb (4) and Index (8)
+          if (uPinchFactor > 0.01 && uPinchRatio < 1.25) {
+            vec3 pA = uLandmarks[4];
+            vec3 pB = uLandmarks[8];
+            float pDist = length(pA - pB);
+            vec3 pMid = mix(pA, pB, 0.5) + vec3(0.0, -0.05 * uHandSize * (pDist / max(0.001, uHandSize)), 0.0);
+
+            float pinchNeckRad = max(0.002 * uHandSize, (0.028 - 0.020 * (uPinchRatio / 1.25)) * uHandSize * uPinchFactor);
+            float dPinch1 = sdCapsule(p, pA, pMid, pinchNeckRad * 1.4);
+            float dPinch2 = sdCapsule(p, pMid, pB, pinchNeckRad * 1.4);
+            float dPinch = min(dPinch1, dPinch2);
+            d = smin(d, dPinch, 0.032 * uHandSize);
+          }
+
+          // 9. Surface Liquid Wobble (Grows on OPEN, Tightens on FIST)
+          float wobbleSpeed = mix(2.2, 4.8, uOpenFactor);
+          float wobbleAmp = mix(0.006, 0.022, uOpenFactor) * (1.0 - 0.75 * uFistFactor) * uHandSize;
+          float wobble = (
+            sin(p.x * 14.0 + uTime * wobbleSpeed) * 0.45 +
+            sin(p.y * 16.0 - uTime * (wobbleSpeed * 0.85)) * 0.35 +
+            cos(p.z * 12.0 + uTime * (wobbleSpeed * 1.15)) * 0.20
+          ) * wobbleAmp;
+          d += wobble;
+
+          // 10. FIST Armor Carapace: Raised Veins (Ridged Noise)
+          if (uFistFactor > 0.01) {
+            float vNoise = abs(sin(p.x * 22.0 + sin(p.y * 18.0)) * cos(p.y * 20.0 + cos(p.z * 16.0)));
+            float veins = (1.0 - vNoise) * (0.015 * uHandSize) * uFistFactor;
+            d -= veins;
+          }
+
+          return d;
+        }
+
+        // Surface Normal via Central Differences
+        vec3 calcNormal(vec3 p) {
+          float eps = 0.0024 * uHandSize;
+          vec2 h = vec2(eps, 0.0);
+          return normalize(vec3(
+            mapScene(p + h.xyy) - mapScene(p - h.xyy),
+            mapScene(p + h.yxy) - mapScene(p - h.yxy),
+            mapScene(p + h.yyx) - mapScene(p - h.yyx)
+          ));
+        }
+
+        // Subsurface Thinness Measurement
+        float calcThinness(vec3 p, vec3 N) {
+          float probeDist = 0.045 * uHandSize;
+          float inside = mapScene(p - N * probeDist);
+          return clamp(1.0 - max(0.0, inside) / probeDist, 0.0, 1.0);
+        }
+
+        void main() {
+          // Reconstruct World-Space View Ray
+          vec2 ndc = vUv * 2.0 - 1.0;
+          float halfFovTan = tan(uFovRad * 0.5);
+          vec3 rdLocal = normalize(vec3(ndc.x * halfFovTan * uAspect, ndc.y * halfFovTan, -1.0));
+          vec3 rd = normalize((uCameraWorldMatrix * vec4(rdLocal, 0.0)).xyz);
+          vec3 ro = uCameraPos;
+
+          // Bounding Sphere Early Exit Optimization
+          float tNear, tFar;
+          if (!intersectBoundingSphere(ro, rd, uPalmCenter, uBoundingRadius, tNear, tFar)) {
+            gl_FragColor = vec4(0.0);
+            return;
+          }
+
+          // Raymarch Loop capped at exactly 48 steps
+          float t = tNear;
+          float hitDist = 1e5;
+          bool hit = false;
+          float dMin = 1e5;
+
+          for (int i = 0; i < 48; i++) {
+            vec3 p = ro + rd * t;
+            float d = mapScene(p);
+            dMin = min(dMin, d);
+
+            if (d < 0.0016 * uHandSize) {
+              hit = true;
+              hitDist = t;
+              break;
+            }
+            // 0.85 step factor guarantees stability around fine tendrils
+            t += d * 0.85;
+            if (t > tFar) break;
+          }
+
+          if (!hit) {
+            // Anti-aliased silhouette edge fallback
+            float edgeAlpha = smoothstep(0.016 * uHandSize, 0.001 * uHandSize, dMin);
+            if (edgeAlpha > 0.001) {
+              gl_FragColor = vec4(vec3(0.02, 0.02, 0.03), edgeAlpha * 0.4);
+            } else {
+              gl_FragColor = vec4(0.0);
+            }
+            return;
+          }
+
+          vec3 p = ro + rd * hitDist;
+          vec3 N = calcNormal(p);
+          vec3 V = -rd;
+
+          // ===================================================================
+          // SHADING: Wet, Glossy, Black Obsidian Material
+          // ===================================================================
+          // 1. Deepest near-black base
+          vec3 baseColor = vec3(0.014, 0.014, 0.020);
+
+          // 2. Cold blue-white Fresnel Rim
+          float NdotV = max(0.0, dot(N, V));
+          float fresnel = pow(1.0 - NdotV, 3.6);
+          vec3 fresnelColor = fresnel * vec3(0.65, 0.80, 1.0) * 1.35;
+
+          // 3. Studio Softbox Reflection Streak from Fake Environment
+          vec3 R = reflect(-V, N);
+          vec3 R_softbox = normalize(vec3(R.x * 0.65, R.y * 1.5, R.z));
+          vec3 L_softbox = normalize(vec3(-0.35, 0.80, 0.45));
+          float softboxStreak = pow(max(0.0, dot(R_softbox, L_softbox)), 10.0) * 0.95;
+
+          // 4. Sharp Secondary Specular Highlight
+          vec3 L_key = normalize(vec3(0.55, 0.65, 0.52));
+          vec3 H_key = normalize(L_key + V);
+          float specSharp = pow(max(0.0, dot(N, H_key)), 52.0) * 1.15;
+
+          // Ambient cold overhead sky reflection
+          vec3 skyAmbient = (R.y * 0.5 + 0.5) * vec3(0.03, 0.045, 0.08);
+
+          // 5. Subsurface-like Dark Purple Tint in Thin Areas
+          float thinness = calcThinness(p, N);
+          vec3 sssPurple = pow(thinness, 2.6) * vec3(0.26, 0.03, 0.35) * 1.1;
+
+          // Combine material terms
+          vec3 surfaceColor = baseColor + sssPurple + fresnelColor + (softboxStreak + specSharp) * vec3(0.96, 0.98, 1.0) + skyAmbient;
+
+          // ===================================================================
+          // VENOM EYES: In-Shader Slanted Almond SDF on Back of Hand (FIST)
+          // ===================================================================
+          if (uFistFactor > 0.02 && uHandDetected > 0.5) {
+            // Hand local dorsal coordinate frame
+            vec3 W = uLandmarks[0];
+            vec3 M = uLandmarks[9];
+            vec3 I = uLandmarks[5];
+            vec3 K = uLandmarks[17];
+
+            vec3 Y_h = normalize(M - W + vec3(0.0001));
+            vec3 X_h = normalize(K - I + vec3(0.0001));
+            vec3 Z_h = normalize(cross(X_h, Y_h)); // Dorsal pointing outwards
+
+            vec3 eyeAnchor = W * 0.28 + M * 0.72 + Z_h * (0.06 * uHandSize);
+            vec3 delta = p - eyeAnchor;
+
+            float uCoord = dot(delta, X_h) / uHandSize;
+            float vCoord = dot(delta, Y_h) / uHandSize;
+            float wCoord = dot(delta, Z_h) / uHandSize;
+
+            if (wCoord > -0.06) {
+              // Left Eye: center (-0.15, 0.03), rotated +24 deg
+              float uL = uCoord - (-0.15);
+              float vL = vCoord - 0.03;
+              float cL = cos(0.42), sL = sin(0.42);
+              float rotUL = uL * cL - vL * sL;
+              float rotVL = uL * sL + vL * cL;
+
+              // Right Eye: center (+0.15, 0.03), rotated -24 deg
+              float uR = uCoord - 0.15;
+              float vR = vCoord - 0.03;
+              float cR = cos(-0.42), sR = sin(-0.42);
+              float rotUR = uR * cR - vR * sR;
+              float rotVR = uR * sR + vR * cR;
+
+              // Almond shape dimensions
+              float aW = 0.13;
+              float aH = 0.065 * uFistFactor; // Opens wide on FIST!
+
+              // Left Eye distance
+              float dEyeL = 1.0;
+              if (abs(rotUL) < aW) {
+                float vTop = aH * (1.0 - (rotUL / aW) * (rotUL / aW));
+                float vBot = -aH * 0.7 * (1.0 - (rotUL / aW) * (rotUL / aW));
+                dEyeL = (rotVL >= 0.0) ? (rotVL - vTop) : (vBot - rotVL);
+              } else {
+                dEyeL = abs(rotUL) - aW;
+              }
+
+              // Right Eye distance
+              float dEyeR = 1.0;
+              if (abs(rotUR) < aW) {
+                float vTop = aH * (1.0 - (rotUR / aW) * (rotUR / aW));
+                float vBot = -aH * 0.7 * (1.0 - (rotUR / aW) * (rotUR / aW));
+                dEyeR = (rotVR >= 0.0) ? (rotVR - vTop) : (vBot - rotVR);
+              } else {
+                dEyeR = abs(rotUR) - aW;
+              }
+
+              float dEye = min(dEyeL, dEyeR);
+
+              // Brilliant glowing white predatory core + cyan falloff
+              float eyeCore = smoothstep(0.012, -0.004, dEye) * uFistFactor;
+              float eyeGlow = smoothstep(0.075, -0.010, dEye) * 0.85 * uFistFactor;
+
+              vec3 eyeColor = mix(vec3(0.65, 0.85, 1.0) * 1.8, vec3(1.6, 1.6, 1.8), eyeCore);
+              surfaceColor = mix(surfaceColor, eyeColor, max(eyeCore, eyeGlow));
+            }
+          }
+
+          gl_FragColor = vec4(surfaceColor, 1.0);
+        }
+      `
+    });
+
+    const sdfQuadMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), sdfRaymarchMaterial);
+    sdfQuadMesh.frustumCulled = false;
+    sdfScene.add(sdfQuadMesh);
+
+    // =========================================================================
+    // SECTION 5: UPSCALED DISPLAY COMPOSITOR (In Main Three.js Scene)
+    // =========================================================================
+    const displayMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      uniforms: {
+        tSdf: { value: sdfRenderTarget.texture }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.999, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tSdf;
+        varying vec2 vUv;
+        void main() {
+          vec4 col = texture2D(tSdf, vUv);
+          if (col.a <= 0.001) discard;
+          gl_FragColor = col;
+        }
+      `
+    });
+
+    const displayQuadMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), displayMaterial);
+    displayQuadMesh.frustumCulled = false;
+    displayQuadMesh.renderOrder = 1;
+    scene.add(displayQuadMesh);
+
+    // =========================================================================
+    // SECTION 6: ACCENT PARTICLES SYSTEM (~3,000 Fluid Droplets)
+    // =========================================================================
+    const pCount = CONFIG.particleCount;
+    const pPositions = new Float32Array(pCount * 3);
+    const pVelocities = new Float32Array(pCount * 3);
+    const pPhases = new Float32Array(pCount);
+    const pSizes = new Float32Array(pCount);
+    const pAnchors = new Uint8Array(pCount);
+
+    const TIP_LANDMARKS = [4, 8, 12, 16, 20, 0, 5, 9, 17];
+
+    for (let i = 0; i < pCount; i++) {
+      const i3 = i * 3;
+      pPositions[i3] = (Math.random() - 0.5) * 1.5;
+      pPositions[i3 + 1] = (Math.random() - 0.5) * 1.5;
+      pPositions[i3 + 2] = (Math.random() - 0.5) * 0.5;
+
+      pPhases[i] = Math.random() * Math.PI * 2;
+      pSizes[i] = 0.5 + Math.random() * 0.9;
+      pAnchors[i] = TIP_LANDMARKS[i % TIP_LANDMARKS.length];
+    }
+
+    const pGeometry = new THREE.BufferGeometry();
+    pGeometry.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+    pGeometry.setAttribute('aPhase', new THREE.BufferAttribute(pPhases, 1));
+    pGeometry.setAttribute('aSize', new THREE.BufferAttribute(pSizes, 1));
+
+    const pMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      uniforms: {
+        uTime: { value: 0 },
+        uBaseSize: { value: CONFIG.particleBaseSize },
+        uDpr: { value: baseDpr },
+        uLightDir: { value: new THREE.Vector3(-0.45, 0.75, 0.48).normalize() }
+      },
+      vertexShader: `
+        attribute float aPhase;
+        attribute float aSize;
+        uniform float uTime;
+        uniform float uBaseSize;
+        uniform float uDpr;
+        varying vec3 vWorldPos;
+        varying float vPhase;
+
+        void main() {
+          vPhase = aPhase;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          vWorldPos = position;
+
+          float pulsate = 1.0 + 0.18 * sin(uTime * 4.0 + aPhase);
+          gl_PointSize = (uBaseSize * aSize * pulsate * uDpr) / max(0.1, -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uLightDir;
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        varying float vPhase;
+
+        void main() {
+          vec2 coord = gl_PointCoord * 2.0 - 1.0;
+          float r2 = dot(coord, coord);
+          if (r2 > 1.0) discard;
+
+          float z = sqrt(max(0.0, 1.0 - r2));
+          vec3 N = normalize(vec3(coord.x, -coord.y, z));
+          vec3 V = vec3(0.0, 0.0, 1.0);
+          vec3 H = normalize(uLightDir + V);
+
+          float specSharp = pow(max(0.0, dot(N, H)), 32.0) * 1.1;
+          float rim = pow(1.0 - N.z, 3.2) * 0.75;
+
+          vec3 baseColor = vec3(0.02, 0.02, 0.03);
+          vec3 col = baseColor + specSharp * vec3(0.95, 0.98, 1.0) + rim * vec3(0.65, 0.78, 1.0);
+
+          float alpha = smoothstep(1.0, 0.80, r2) * 0.92;
+          gl_FragColor = vec4(col, alpha);
+        }
+      `
+    });
+
+    const particleSystem = new THREE.Points(pGeometry, pMaterial);
+    particleSystem.renderOrder = 2;
+    scene.add(particleSystem);
+
+    // =========================================================================
+    // SECTION 7: CINEMATIC POST-PROCESSING PIPELINE
+    // =========================================================================
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    // High-Threshold UnrealBloomPass: Only specular glints & Venom eyes bloom
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.62, // strength (~0.6)
+      0.40, // radius
+      0.82  // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Video Texture Setup
+    const videoTexture = new THREE.VideoTexture(videoEl);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.generateMipmaps = false;
+    videoTexture.colorSpace = THREE.SRGBColorSpace;
+
+    // Custom Final Post Pass: Film grain, vignette, chromatic aberration, blue-black video grade
+    const finalShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        tSdf: { value: null },
+        tVideo: { value: null },
+        uHasVideo: { value: 0.0 },
+        uTime: { value: 0.0 },
+        uResolution: { value: new THREE.Vector2(window.innerWidth * baseDpr, window.innerHeight * baseDpr) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse; // Bloomed Scene
+        uniform sampler2D tSdf;     // Raymarched Raw Symbiote
+        uniform sampler2D tVideo;   // Webcam Video
+        uniform float uHasVideo;
+        uniform float uTime;
+        uniform vec2 uResolution;
+        varying vec2 vUv;
+
+        // Hash for 35mm film grain
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        void main() {
+          vec2 uv = vUv;
+
+          // 1. Subtle Radial Chromatic Aberration at Screen Edges
+          vec2 center = vec2(0.5);
+          vec2 d = uv - center;
+          float dist2 = dot(d, d);
+          vec2 caOffset = d * dist2 * 0.012;
+
+          float rScene = texture2D(tDiffuse, uv - caOffset).r;
+          vec4 gScene = texture2D(tDiffuse, uv);
+          float bScene = texture2D(tDiffuse, uv + caOffset).b;
+          vec3 sceneRGB = vec3(rScene, gScene.g, bScene);
+
+          // 2. Video Background (Darkened, Desaturated & Blue-Black Color Graded)
+          vec3 bg;
+          if (uHasVideo > 0.5) {
+            // Mirrored video UV coordinates
+            vec2 vidUv = vec2(1.0 - uv.x, uv.y);
+            vec3 rawVid = texture2D(tVideo, vidUv).rgb;
+
+            // Desaturate & Darken (brightness ~0.4, contrast enhanced)
+            float gray = dot(rawVid, vec3(0.299, 0.587, 0.114));
+            vec3 desat = mix(rawVid, vec3(gray), 0.38);
+            vec3 graded = pow(desat * 0.38, vec3(1.15));
+
+            // Blue-black shadow tint
+            graded = mix(graded, vec3(0.015, 0.024, 0.045), 0.28);
+            bg = graded;
+          } else {
+            // Mouse fallback: cinematic obsidian void
+            bg = vec3(0.012, 0.014, 0.020);
+          }
+
+          // 3. Composite Raymarched Skin & Bloomed Highlights over Video
+          vec4 rawSdf = texture2D(tSdf, uv);
+          float skinAlpha = rawSdf.a;
+
+          // Mix symbiote surface over darkened video
+          vec3 comp = mix(bg, sceneRGB, skinAlpha);
+
+          // Feather bloom specular glow onto surroundings
+          comp += max(vec3(0.0), sceneRGB - vec3(skinAlpha * 0.75)) * 0.50;
+
+          // 4. Cinematic Dark Vignette
+          float vig = smoothstep(0.96, 0.28, length(d) * 1.32);
+          comp *= vig;
+
+          // 5. 35mm Fine Film Grain
+          float grain = (hash(uv * uResolution + fract(uTime * 23.41)) - 0.5) * 0.035;
+          comp += grain;
+
+          gl_FragColor = vec4(comp, 1.0);
+        }
+      `
+    };
+
+    const finalPass = new ShaderPass(finalShader);
+    finalPass.uniforms.tSdf.value = sdfRenderTarget.texture;
+    finalPass.uniforms.tVideo.value = videoTexture;
+    finalPass.renderToScreen = true;
+    composer.addPass(finalPass);
+
+    // =========================================================================
+    // SECTION 8: GESTURE DETECTION (Pure Functions)
+    // =========================================================================
+    function dist3(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+    }
+
+    function evaluateGesture(landmarks, handSpeed) {
+      const wrist = landmarks[0];
+      const middleMCP = landmarks[9];
+      const handSize = Math.max(0.12, dist3(wrist, middleMCP));
+
+      const dIndexTip = dist3(landmarks[8], wrist);
+      const dIndexPip = dist3(landmarks[6], wrist);
+
+      const dMiddleTip = dist3(landmarks[12], wrist);
+      const dMiddlePip = dist3(landmarks[10], wrist);
+
+      const dRingTip = dist3(landmarks[16], wrist);
+      const dRingPip = dist3(landmarks[14], wrist);
+
+      const dPinkyTip = dist3(landmarks[20], wrist);
+      const dPinkyPip = dist3(landmarks[18], wrist);
+
+      const allExtended = (
+        dIndexTip > dIndexPip &&
+        dMiddleTip > dMiddlePip &&
+        dRingTip > dRingPip &&
+        dPinkyTip > dPinkyPip
+      );
+
+      const allCurled = (
+        dIndexTip < dIndexPip &&
+        dMiddleTip < dMiddlePip &&
+        dRingTip < dRingPip &&
+        dPinkyTip < dPinkyPip
+      );
+
+      const pinchDist = dist3(landmarks[4], landmarks[8]);
+      const pinchRatio = pinchDist / handSize;
+
+      // 1. FIST takes priority when all 4 fingers are curled
+      if (allCurled) {
+        return { gesture: 'FIST', handSize, pinchRatio };
+      }
+
+      // 2. PINCH condition
+      if (pinchRatio < CONFIG.pinchThreshold) {
+        return { gesture: 'PINCH', handSize, pinchRatio };
+      }
+
+      // 3. SPREAD burst (open palm moving rapidly)
+      if (allExtended && handSpeed > CONFIG.spreadSpeedThreshold) {
+        return { gesture: 'SPREAD', handSize, pinchRatio };
+      }
+
+      // 4. OPEN palm
+      if (allExtended) {
+        return { gesture: 'OPEN', handSize, pinchRatio };
+      }
+
+      return { gesture: 'OPEN', handSize, pinchRatio };
+    }
+
+    // =========================================================================
+    // SECTION 9: CAM & MEDIAPIPE INITIALIZATION (GPU with CPU Fallback)
+    // =========================================================================
+    let handLandmarker = null;
+    let lastVideoTime = -1;
+
+    async function initMediaPipeAndCamera() {
+      try {
+        loadingDesc.textContent = 'Loading MediaPipe Tasks Vision WASM...';
+        const vision = await FilesetResolver.forVisionTasks(CONFIG.wasmPath);
+
+        loadingDesc.textContent = 'Initializing HandLandmarker (attempting GPU delegate)...';
+        try {
+          handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: CONFIG.modelAssetPath,
+              delegate: 'GPU'
+            },
+            runningMode: 'VIDEO',
+            numHands: 2
+          });
+          trackingDisplay.textContent = 'WEBCAM (GPU)';
+        } catch (gpuErr) {
+          console.warn('[SYMBIOTE] GPU delegate failed, falling back to CPU delegate:', gpuErr);
+          loadingDesc.textContent = 'GPU unavailable. Falling back to CPU delegate...';
+          handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: CONFIG.modelAssetPath,
+              delegate: 'CPU'
+            },
+            runningMode: 'VIDEO',
+            numHands: 2
+          });
+          trackingDisplay.textContent = 'WEBCAM (CPU)';
+        }
+
+        // Camera stream
+        loadingDesc.textContent = 'Requesting camera stream...';
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+
+        videoEl.srcObject = stream;
+        await new Promise((resolve) => {
+          let resolved = false;
+          const done = () => {
+            if (resolved) return;
+            resolved = true;
+            resolve();
+          };
+          const timer = setTimeout(done, 3000);
+          videoEl.onloadedmetadata = () => {
+            videoEl.play().then(() => {
+              state.hasVideoTexture = true;
+              finalPass.uniforms.uHasVideo.value = 1.0;
+              clearTimeout(timer);
+              done();
+            }).catch(done);
+          };
+        });
+
+        statusText.textContent = 'Tracking active: Face camera & position hand';
+        loadingOverlay.classList.add('hidden');
+      } catch (err) {
+        console.warn('[SYMBIOTE] Camera or MediaPipe initialization failed:', err);
+        activateMouseFallback(
+          `Camera / Model notice: ${err.name || 'Unavailable'}. Mouse fallback active.`
+        );
+      }
+    }
+
+    function activateMouseFallback(reason) {
+      state.isMouseFallback = true;
+      toggleFallbackBtn.textContent = 'M: camera';
+      trackingDisplay.textContent = 'MOUSE FALLBACK';
+      trackingDisplay.style.color = '#f59e0b';
+      statusBanner.classList.add('warning');
+      statusText.textContent = reason || 'Mouse fallback active';
+      loadingOverlay.classList.add('hidden');
+      state.hasVideoTexture = false;
+      finalPass.uniforms.uHasVideo.value = 0.0;
+    }
+
+    function deactivateMouseFallback() {
+      if (!handLandmarker) {
+        statusText.textContent = 'Camera / Model unavailable; cannot return to camera.';
+        return;
+      }
+      state.isMouseFallback = false;
+      toggleFallbackBtn.textContent = 'M: mouse';
+      trackingDisplay.textContent = 'WEBCAM';
+      trackingDisplay.style.color = '#60a5fa';
+      statusBanner.classList.remove('warning');
+      statusText.textContent = 'Camera tracking restored.';
+      state.hasVideoTexture = true;
+      finalPass.uniforms.uHasVideo.value = 1.0;
+    }
+
+    toggleFallbackBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.isMouseFallback) deactivateMouseFallback();
+      else activateMouseFallback('Mouse control toggled by user.');
+    });
+
+    // =========================================================================
+    // SECTION 10: MOUSE FALLBACK CONTROLLER (Full Hand Landmark Synthesis)
+    // =========================================================================
+    const _tempLM = Array.from({ length: 21 }, () => new THREE.Vector3());
+
+    function updateSyntheticMouseHand(dt) {
+      const targetScreenU = mouseInput.clientX / window.innerWidth;
+      const targetScreenV = mouseInput.clientY / window.innerHeight;
+      const targetWorld = screenToWorld(targetScreenU, targetScreenV, mouseInput.depthZ, new THREE.Vector3());
+
+      const lerpSpd = 1.0 - Math.exp(-14.0 * dt);
+      mouseInput.targetX += (targetWorld.x - mouseInput.targetX) * lerpSpd;
+      mouseInput.targetY += (targetWorld.y - mouseInput.targetY) * lerpSpd;
+
+      const dx = targetWorld.x - mouseInput.targetX;
+      const dy = targetWorld.y - mouseInput.targetY;
+      mouseInput.speed = Math.hypot(dx, dy) / Math.max(0.001, dt);
+
+      const isFist = mouseInput.isLeftDown;
+      const isPinch = mouseInput.isRightDown || mouseInput.isSpaceDown;
+
+      const cx = mouseInput.targetX;
+      const cy = mouseInput.targetY;
+      const cz = targetWorld.z;
+      const scale = 0.55;
+
+      // Landmark 0: Wrist
+      _tempLM[0].set(cx, cy - 0.35 * scale, cz);
+
+      // Thumb (1, 2, 3, 4)
+      _tempLM[1].set(cx - 0.15 * scale, cy - 0.20 * scale, cz);
+      _tempLM[2].set(cx - 0.22 * scale, cy - 0.08 * scale, cz);
+      _tempLM[3].set(cx - 0.26 * scale, cy + 0.04 * scale, cz);
+      if (isFist) {
+        _tempLM[4].set(cx - 0.10 * scale, cy + 0.02 * scale, cz);
+      } else if (isPinch) {
+        _tempLM[4].set(cx - 0.04 * scale, cy + 0.22 * scale, cz);
+      } else {
+        _tempLM[4].set(cx - 0.35 * scale, cy + 0.16 * scale, cz);
+      }
+
+      // Index (5, 6, 7, 8)
+      _tempLM[5].set(cx - 0.12 * scale, cy + 0.12 * scale, cz);
+      if (isFist) {
+        _tempLM[6].set(cx - 0.12 * scale, cy + 0.20 * scale, cz);
+        _tempLM[7].set(cx - 0.12 * scale, cy + 0.10 * scale, cz);
+        _tempLM[8].set(cx - 0.12 * scale, cy - 0.02 * scale, cz);
+      } else if (isPinch) {
+        _tempLM[6].set(cx - 0.10 * scale, cy + 0.24 * scale, cz);
+        _tempLM[7].set(cx - 0.06 * scale, cy + 0.24 * scale, cz);
+        _tempLM[8].set(cx - 0.02 * scale, cy + 0.23 * scale, cz);
+      } else {
+        _tempLM[6].set(cx - 0.12 * scale, cy + 0.28 * scale, cz);
+        _tempLM[7].set(cx - 0.12 * scale, cy + 0.40 * scale, cz);
+        _tempLM[8].set(cx - 0.12 * scale, cy + 0.52 * scale, cz);
+      }
+
+      // Middle (9, 10, 11, 12)
+      _tempLM[9].set(cx, cy + 0.14 * scale, cz);
+      if (isFist) {
+        _tempLM[10].set(cx, cy + 0.22 * scale, cz);
+        _tempLM[11].set(cx, cy + 0.12 * scale, cz);
+        _tempLM[12].set(cx, cy - 0.02 * scale, cz);
+      } else {
+        _tempLM[10].set(cx, cy + 0.30 * scale, cz);
+        _tempLM[11].set(cx, cy + 0.44 * scale, cz);
+        _tempLM[12].set(cx, cy + 0.56 * scale, cz);
+      }
+
+      // Ring (13, 14, 15, 16)
+      _tempLM[13].set(cx + 0.11 * scale, cy + 0.12 * scale, cz);
+      if (isFist) {
+        _tempLM[14].set(cx + 0.11 * scale, cy + 0.20 * scale, cz);
+        _tempLM[15].set(cx + 0.11 * scale, cy + 0.10 * scale, cz);
+        _tempLM[16].set(cx + 0.11 * scale, cy - 0.02 * scale, cz);
+      } else {
+        _tempLM[14].set(cx + 0.11 * scale, cy + 0.28 * scale, cz);
+        _tempLM[15].set(cx + 0.11 * scale, cy + 0.40 * scale, cz);
+        _tempLM[16].set(cx + 0.11 * scale, cy + 0.50 * scale, cz);
+      }
+
+      // Pinky (17, 18, 19, 20)
+      _tempLM[17].set(cx + 0.20 * scale, cy + 0.06 * scale, cz);
+      if (isFist) {
+        _tempLM[18].set(cx + 0.20 * scale, cy + 0.14 * scale, cz);
+        _tempLM[19].set(cx + 0.20 * scale, cy + 0.06 * scale, cz);
+        _tempLM[20].set(cx + 0.20 * scale, cy - 0.04 * scale, cz);
+      } else {
+        _tempLM[18].set(cx + 0.20 * scale, cy + 0.20 * scale, cz);
+        _tempLM[19].set(cx + 0.20 * scale, cy + 0.30 * scale, cz);
+        _tempLM[20].set(cx + 0.20 * scale, cy + 0.40 * scale, cz);
+      }
+
+      for (let i = 0; i < 21; i++) {
+        state.landmarks[i].copy(_tempLM[i]);
+      }
+      state.handDetected = true;
+      state.handSpeed = mouseInput.speed;
+
+      return evaluateGesture(state.landmarks, state.handSpeed);
+    }
+
+    // Window Mouse & Keyboard Listeners
+    window.addEventListener('mousemove', (e) => {
+      mouseInput.clientX = e.clientX;
+      mouseInput.clientY = e.clientY;
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      if (e.target && typeof e.target.closest === 'function' && e.target.closest('#hud')) return;
+      if (e.button === 0) mouseInput.isLeftDown = true;
+      if (e.button === 2) {
+        e.preventDefault();
+        mouseInput.isRightDown = true;
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) mouseInput.isLeftDown = false;
+      if (e.button === 2) mouseInput.isRightDown = false;
+    });
+
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        mouseInput.isSpaceDown = true;
+      }
+      if (e.key === 'm' || e.key === 'M') {
+        if (state.isMouseFallback) deactivateMouseFallback();
+        else activateMouseFallback('Mouse control toggled via "M" key.');
+      }
+      if (e.key === 'h' || e.key === 'H') {
+        hudEl.classList.toggle('hidden');
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') mouseInput.isSpaceDown = false;
+    });
+
+    window.addEventListener('wheel', (e) => {
+      mouseInput.depthZ = THREE.MathUtils.clamp(mouseInput.depthZ + e.deltaY * 0.0015, -0.6, 0.6);
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        mouseInput.clientX = e.touches[0].clientX;
+        mouseInput.clientY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    // =========================================================================
+    // SECTION 11: MAIN ANIMATION LOOP (Target 60 FPS)
+    // =========================================================================
+    const _rawPos = new THREE.Vector3();
+    const _targetPos = new THREE.Vector3();
+
+    function updateRenderTargetSizes() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      rtWidth = Math.max(64, Math.round(w * state.resScale));
+      rtHeight = Math.max(64, Math.round(h * state.resScale));
+      sdfRenderTarget.setSize(rtWidth, rtHeight);
+      displayMaterial.uniforms.tSdf.value = sdfRenderTarget.texture;
+      finalPass.uniforms.tSdf.value = sdfRenderTarget.texture;
+    }
+
+    function animate(currentTimeMs) {
+      requestAnimationFrame(animate);
+
+      const dt = THREE.MathUtils.clamp((currentTimeMs - lastTimeMs) * 0.001, 0.001, 0.05);
+      lastTimeMs = currentTimeMs;
+      const time = currentTimeMs * 0.001;
+
+      // FPS Telemetry & Adaptive Resolution Scaling
+      frameCount++;
+      fpsTimer += dt;
+      if (fpsTimer >= 0.25) {
+        currentFps = Math.round(frameCount / fpsTimer);
+        fpsDisplay.textContent = `${currentFps} FPS`;
+        frameCount = 0;
+        fpsTimer = 0;
+
+        fpsHistory.push(currentFps);
+        if (fpsHistory.length > 8) fpsHistory.shift();
+        const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+
+        // Drop to 0.5 scale if FPS < 40; restore to 0.65 if FPS > 55
+        if (avgFps < 40 && state.resScale > 0.52) {
+          state.resScale = 0.50;
+          updateRenderTargetSizes();
+        } else if (avgFps > 55 && state.resScale < 0.62) {
+          state.resScale = 0.65;
+          updateRenderTargetSizes();
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Step A: Hand Tracking or Mouse Fallback Evaluation
+      // -----------------------------------------------------------------------
+      let detectedEval = null;
+
+      if (!state.isMouseFallback && handLandmarker && videoEl.readyState >= 2) {
+        if (videoEl.currentTime !== lastVideoTime) {
+          lastVideoTime = videoEl.currentTime;
+          const detection = handLandmarker.detectForVideo(videoEl, currentTimeMs);
+
+          if (detection.landmarks && detection.landmarks.length > 0) {
+            state.handDetected = true;
+            const rawLMs = detection.landmarks[0];
+
+            const alpha = 1.0 - Math.exp(-18.0 * dt);
+            for (let i = 0; i < 21; i++) {
+              const pt = rawLMs[i];
+              // Mirror coordinate: u = 1 - pt.x
+              screenToWorld(1.0 - pt.x, pt.y, pt.z, _rawPos);
+              state.landmarks[i].lerp(_rawPos, alpha);
+            }
+
+            const wristMove = dist3(state.landmarks[0], state.prevWrist);
+            state.wristSpeed = wristMove / Math.max(0.001, dt);
+            state.prevWrist.copy(state.landmarks[0]);
+            state.handSpeed = state.wristSpeed;
+
+            detectedEval = evaluateGesture(state.landmarks, state.handSpeed);
+          } else {
+            state.handDetected = false;
+          }
+        }
+      } else if (state.isMouseFallback) {
+        detectedEval = updateSyntheticMouseHand(dt);
+      }
+
+      // Compute Palm Center & Bounding Radius
+      if (state.handDetected) {
+        state.palmCenter.set(0, 0, 0);
+        state.palmCenter.add(state.landmarks[0]);
+        state.palmCenter.add(state.landmarks[5]);
+        state.palmCenter.add(state.landmarks[9]);
+        state.palmCenter.add(state.landmarks[17]);
+        state.palmCenter.multiplyScalar(0.25);
+
+        // Compute enclosing radius around all 21 points
+        let maxR = 0;
+        for (let i = 0; i < 21; i++) {
+          const r = dist3(state.landmarks[i], state.palmCenter);
+          if (r > maxR) maxR = r;
+        }
+        state.boundingRadius = maxR + 0.35 * state.handSize;
+      } else {
+        state.palmCenter.set(0, 0, 0);
+        state.boundingRadius = 1.2;
+      }
+
+      // -----------------------------------------------------------------------
+      // Step B: Gesture Transition & Smooth Factor Morphing
+      // -----------------------------------------------------------------------
+      if (state.handDetected && detectedEval) {
+        state.handSize = detectedEval.handSize;
+        state.pinchDistanceRatio = detectedEval.pinchRatio;
+
+        if (detectedEval.gesture === state.pendingGesture) {
+          state.gestureStableCount++;
+          if (state.gestureStableCount >= CONFIG.hysteresisFrames) {
+            state.currentGesture = detectedEval.gesture;
+          }
+        } else {
+          state.pendingGesture = detectedEval.gesture;
+          state.gestureStableCount = 1;
+        }
+      } else {
+        state.currentGesture = 'IDLE';
+        state.pendingGesture = 'IDLE';
+        state.gestureStableCount = 0;
+      }
+
+      // Smooth gesture factors (0.0 to 1.0)
+      const morphSpd = 1.0 - Math.exp(-10.0 * dt);
+      const isFist = state.currentGesture === 'FIST';
+      const isOpen = state.currentGesture === 'OPEN';
+      const isPinch = state.currentGesture === 'PINCH';
+      const isSpread = state.currentGesture === 'SPREAD';
+
+      state.fistFactor += ((isFist ? 1.0 : 0.0) - state.fistFactor) * morphSpd;
+      state.openFactor += (((isOpen || isSpread) ? 1.0 : 0.0) - state.openFactor) * morphSpd;
+      state.pinchFactor += ((isPinch ? 1.0 : 0.0) - state.pinchFactor) * morphSpd;
+      state.spreadFactor += ((isSpread ? 1.0 : 0.0) - state.spreadFactor) * morphSpd;
+
+      // Update gesture display
+      if (gestureDisplay.textContent !== state.currentGesture) {
+        gestureDisplay.textContent = state.currentGesture;
+      }
+
+      // -----------------------------------------------------------------------
+      // Step C: Update SDF Raymarcher Uniforms & Render to Offscreen Target
+      // -----------------------------------------------------------------------
+      for (let i = 0; i < 21; i++) {
+        landmarkUniforms[i].copy(state.landmarks[i]);
+      }
+
+      camera.updateMatrixWorld();
+      sdfRaymarchMaterial.uniforms.uTime.value = time;
+      sdfRaymarchMaterial.uniforms.uPalmCenter.value.copy(state.palmCenter);
+      sdfRaymarchMaterial.uniforms.uBoundingRadius.value = state.boundingRadius;
+      sdfRaymarchMaterial.uniforms.uHandSize.value = state.handSize;
+      sdfRaymarchMaterial.uniforms.uHandDetected.value = state.handDetected ? 1.0 : 0.0;
+      sdfRaymarchMaterial.uniforms.uFistFactor.value = state.fistFactor;
+      sdfRaymarchMaterial.uniforms.uOpenFactor.value = state.openFactor;
+      sdfRaymarchMaterial.uniforms.uPinchFactor.value = state.pinchFactor;
+      sdfRaymarchMaterial.uniforms.uPinchRatio.value = state.pinchDistanceRatio;
+      sdfRaymarchMaterial.uniforms.uCameraPos.value.copy(camera.position);
+      sdfRaymarchMaterial.uniforms.uCameraWorldMatrix.value.copy(camera.matrixWorld);
+      sdfRaymarchMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+
+      // Render Raymarched Skin into Low-Res Target
+      renderer.setRenderTarget(sdfRenderTarget);
+      renderer.clear();
+      renderer.render(sdfScene, orthoCamera);
+      renderer.setRenderTarget(null);
+
+      // -----------------------------------------------------------------------
+      // Step D: Update Accent Particles (~3,000 Liquid Droplets)
+      // -----------------------------------------------------------------------
+      pMaterial.uniforms.uTime.value = time;
+
+      for (let i = 0; i < pCount; i++) {
+        const i3 = i * 3;
+        _rawPos.set(pPositions[i3], pPositions[i3 + 1], pPositions[i3 + 2]);
+
+        if (state.handDetected) {
+          const anchorIdx = pAnchors[i];
+          const anchorLm = state.landmarks[anchorIdx];
+          const phase = pPhases[i];
+
+          if (isSpread) {
+            // Explosive outward burst
+            const dirX = _rawPos.x - state.palmCenter.x;
+            const dirY = _rawPos.y - state.palmCenter.y;
+            const dirZ = _rawPos.z - state.palmCenter.z;
+            const dLen = Math.hypot(dirX, dirY, dirZ) || 1.0;
+            _targetPos.set(
+              state.palmCenter.x + (dirX / dLen) * 2.8,
+              state.palmCenter.y + (dirY / dLen) * 2.8,
+              state.palmCenter.z + (dirZ / dLen) * 1.5
+            );
+          } else if (isPinch) {
+            // Swarm pinch focus
+            const pFocal = _targetPos.copy(state.landmarks[4]).lerp(state.landmarks[8], 0.5);
+            const rad = 0.06 + Math.sin(phase + time * 4.0) * 0.04;
+            _targetPos.x += Math.cos(phase * 4.0) * rad;
+            _targetPos.y += Math.sin(phase * 4.0) * rad;
+            _targetPos.z += Math.sin(phase * 2.0) * rad;
+          } else if (isFist) {
+            // Cling to knuckles & wrist as micro-droplets
+            _targetPos.set(
+              anchorLm.x + Math.sin(phase * 3.0 + time) * 0.05 * state.handSize,
+              anchorLm.y + Math.cos(phase * 3.0 + time) * 0.05 * state.handSize,
+              anchorLm.z + Math.sin(phase * 2.0) * 0.04 * state.handSize
+            );
+          } else {
+            // OPEN PALM: Swirling fluid mist detaching from fingertip tendrils
+            const angle = phase + time * 2.4;
+            const dist = 0.08 + (phase / Math.PI) * (state.handSize * 0.85);
+            _targetPos.set(
+              anchorLm.x + Math.cos(angle) * dist,
+              anchorLm.y + Math.sin(angle) * dist,
+              anchorLm.z + Math.sin(angle * 2.0) * 0.12
+            );
+          }
+        } else {
+          // IDLE breathing mist around center
+          const angle = pPhases[i] + time * 0.65;
+          const rad = 0.85 * (0.65 + 0.35 * Math.sin(time * 1.4 + pPhases[i]));
+          _targetPos.set(
+            Math.cos(angle) * rad,
+            Math.sin(angle) * rad,
+            Math.cos(angle * 2.0) * (rad * 0.45)
+          );
+        }
+
+        const attractK = isSpread ? 6.0 : isFist ? 26.0 : 16.0;
+        const damp = isFist ? 0.84 : 0.92;
+
+        pVelocities[i3] = (pVelocities[i3] + (_targetPos.x - _rawPos.x) * attractK * dt) * damp;
+        pVelocities[i3 + 1] = (pVelocities[i3 + 1] + (_targetPos.y - _rawPos.y) * attractK * dt) * damp;
+        pVelocities[i3 + 2] = (pVelocities[i3 + 2] + (_targetPos.z - _rawPos.z) * attractK * dt) * damp;
+
+        pPositions[i3] += pVelocities[i3] * dt;
+        pPositions[i3 + 1] += pVelocities[i3 + 1] * dt;
+        pPositions[i3 + 2] += pVelocities[i3 + 2] * dt;
+      }
+      pGeometry.attributes.position.needsUpdate = true;
+
+      // -----------------------------------------------------------------------
+      // Step E: Post-Processing & Final Cinematic Composite
+      // -----------------------------------------------------------------------
+      finalPass.uniforms.uTime.value = time;
+      composer.render();
+    }
+
+    // =========================================================================
+    // SECTION 12: WINDOW RESIZE & LIFECYCLE
+    // =========================================================================
+    function handleResize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+
+      const dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDpr);
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      bloomPass.setSize(w, h);
+
+      updateRenderTargetSizes();
+
+      sdfRaymarchMaterial.uniforms.uAspect.value = w / h;
+      pMaterial.uniforms.uDpr.value = dpr;
+      finalPass.uniforms.uResolution.value.set(w * dpr, h * dpr);
+    }
+
+    window.addEventListener('resize', handleResize);
+
+    // Start animation loop immediately
+    requestAnimationFrame(animate);
+
+    // Flag for test automation and readiness
+    window.__symbioteReady = true;
+
+    // Bootstrap camera & MediaPipe asynchronously
+    initMediaPipeAndCamera().catch((err) => {
+      console.warn('[SYMBIOTE] Background init error:', err);
+    });
+  </script>
+</body>
+</html>
