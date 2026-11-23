@@ -1189,6 +1189,11 @@
       return evaluateGesture(state.landmarks, state.handSpeed);
     }
 
+    // Helper to identify clicks on interactive 2D HUD UI elements (header, buttons, mode cards)
+    function isInteractiveHudTarget(target) {
+      return Boolean(target && typeof target.closest === 'function' && target.closest('.nexus-interactive'));
+    }
+
     // Window Mouse & Keyboard Listeners
     window.addEventListener('mousemove', (e) => {
       mouseInput.clientX = e.clientX;
@@ -1196,13 +1201,15 @@
     });
 
     window.addEventListener('mousedown', (e) => {
-      if (e.button === 2) {
+      // Do not capture pointer events meant for interactive 2D HUD UI controls
+      if (isInteractiveHudTarget(e.target)) return;
+
+      if (e.button === 0) {
+        mouseInput.isLeftDown = true;
+      } else if (e.button === 2) {
         e.preventDefault();
         mouseInput.isRightDown = true;
-        return;
       }
-      if (e.target && typeof e.target.closest === 'function' && e.target.closest('#hud')) return;
-      if (e.button === 0) mouseInput.isLeftDown = true;
     });
 
     window.addEventListener('mouseup', (e) => {
@@ -1210,10 +1217,36 @@
       if (e.button === 2) mouseInput.isRightDown = false;
     });
 
-    window.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Prevent context menu over 3D spatial viewport, preserving it on interactive HUD controls
+    window.addEventListener('contextmenu', (e) => {
+      if (!isInteractiveHudTarget(e.target)) {
+        e.preventDefault();
+      }
+    });
+
+    // Prevent stuck pinch/fist states if browser loses focus or pointer leaves the window
+    window.addEventListener('blur', () => {
+      mouseInput.isLeftDown = false;
+      mouseInput.isRightDown = false;
+      mouseInput.isSpaceDown = false;
+    });
+
+    window.addEventListener('pointercancel', () => {
+      mouseInput.isLeftDown = false;
+      mouseInput.isRightDown = false;
+    });
+
+    document.addEventListener('mouseleave', () => {
+      mouseInput.isLeftDown = false;
+      mouseInput.isRightDown = false;
+    });
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
+        // If an HTML button happens to hold focus, blur it immediately so Space only controls pinch
+        if (document.activeElement && typeof document.activeElement.blur === 'function' && document.activeElement !== document.body) {
+          document.activeElement.blur();
+        }
         e.preventDefault();
         mouseInput.isSpaceDown = true;
       }

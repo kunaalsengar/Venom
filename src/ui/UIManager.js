@@ -95,6 +95,9 @@ export class UIManager {
     this.elements.modeCards.forEach((card) => {
       card.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (e.currentTarget && typeof e.currentTarget.blur === 'function') {
+          e.currentTarget.blur();
+        }
         const modeId = card.getAttribute('data-mode');
         if (!modeId) return;
 

@@ -262,18 +262,6 @@ export class HolographicObjectManager {
         if (isPinching) {
           // Drag object to match controller movement
           selectedObj.dragTo(cPos, dt);
-
-          // Check for gestural action activation while selected (e.g. SPREAD or FIST)
-          if ((gesture === 'FIST' || gesture === 'SPREAD') &&
-              currentTimeMs - hState.lastActionTimestamp > (this._cfg.actionCooldownMs || 250)) {
-            hState.lastActionTimestamp = currentTimeMs;
-            selectedObj.activate(side, gesture, currentTimeMs);
-            eventBus.emit(Events.HOLOGRAM_OBJECT_ACTIVATED, {
-              id: selectedObj.id,
-              hand: side,
-              gesture: gesture
-            });
-          }
         } else {
           // Pinch ended -> naturally release selection
           this._releaseSelection(side, hState.selectedId);

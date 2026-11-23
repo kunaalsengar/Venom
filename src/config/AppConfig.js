@@ -317,6 +317,23 @@ export const AppConfig = Object.freeze({
       maxSpanDistance: 5.0,      // Maximum clamp threshold
       spanHysteresisMs: 80       // Grace duration for two-hand transitions
     }),
+    manipulation: Object.freeze({
+      twoHand: Object.freeze({
+        enabled: true,
+        zoomEnabled: true,
+        zoomSensitivity: 1.20,
+        zoomDeadband: 0.035,
+        minScale: 0.40,
+        maxScale: 2.80,
+        zoomSmoothing: 18.0,
+        rotationEnabled: true,
+        rotationSensitivity: 1.10,
+        rotationDeadbandDeg: 3.0,
+        rotationSmoothing: 16.0,
+        twoHandDragSmoothing: 24.0,
+        mouseFallbackZoomEnabled: true
+      })
+    }),
     objects: Object.freeze({
       targetingTolerance: 0.08,  // Hysteresis distance buffer to prevent edge flickering
       hoverDistance: 0.42,       // Proximity threshold for 3D cursor-to-object hover

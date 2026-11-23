@@ -52,6 +52,7 @@ export class InteractableHologram extends HologramObject {
     this.onActivate = options.onActivate || null;
 
     this._cfg = AppConfig.interaction.objects;
+    this._manipCfg = AppConfig.interaction?.manipulation?.twoHand;
 
     // Interaction state
     this.state = 'IDLE'; // 'IDLE' | 'HOVERED' | 'SELECTED' | 'ACTIVATED'
@@ -70,6 +71,12 @@ export class InteractableHologram extends HologramObject {
     this.initialPosition.copy(this.position);
     this.dragOffset = new THREE.Vector3();
     this.targetPosition = new THREE.Vector3().copy(this.position);
+
+    // Persistent user-controlled transform channels (RST manipulation)
+    this.userScale = 1.0;
+    this.targetUserScale = 1.0;
+    this.userRotation = new THREE.Euler(0, 0, 0);
+    this.targetUserRotation = new THREE.Euler(0, 0, 0);
 
     // Animation & interpolation variables
     this.currentScale = 1.0;
@@ -278,12 +285,24 @@ export class InteractableHologram extends HologramObject {
       }
     }
 
-    // 2. Exponential scale interpolation
+    // 2. Exponential scale interpolation (composed visual scale = state scale * user scale)
     const scaleAlpha = expDecayAlpha(this._cfg.hoverLerpSpeed || 14.0, dt);
     this.currentScale = lerp(this.currentScale, this.targetScale, scaleAlpha);
-    this.scale.setScalar(this.currentScale);
 
-    // 3. Spin speed & rotation
+    const zoomSmoothing = (this._manipCfg && this._manipCfg.zoomSmoothing) || 18.0;
+    const zoomAlpha = expDecayAlpha(zoomSmoothing, dt);
+    this.userScale = lerp(this.userScale, this.targetUserScale, zoomAlpha);
+
+    this.scale.setScalar(this.currentScale * this.userScale);
+
+    // 3. User-controlled root orientation & inner mesh ambient spin
+    const rotSmoothing = (this._manipCfg && this._manipCfg.rotationSmoothing) || 16.0;
+    const rotAlpha = expDecayAlpha(rotSmoothing, dt);
+    this.userRotation.x = lerp(this.userRotation.x, this.targetUserRotation.x, rotAlpha);
+    this.userRotation.y = lerp(this.userRotation.y, this.targetUserRotation.y, rotAlpha);
+    this.userRotation.z = lerp(this.userRotation.z, this.targetUserRotation.z, rotAlpha);
+    this.rotation.copy(this.userRotation);
+
     const baseRot = this.state === 'SELECTED' ? 1.6 : (this.state === 'HOVERED' ? 1.2 : 0.6);
     this.spinBoost = Math.max(0.0, this.spinBoost - 12.0 * dt);
     const currentRotSpeed = (baseRot + this.spinBoost) * dt;
@@ -331,11 +350,59 @@ export class InteractableHologram extends HologramObject {
   }
 
   /**
-   * Reset object position to initial spawn point
+   * Set target user scale factor clamped within configured limits
+   * @param {number} scaleFactor
+   * @param {boolean} [immediate=false]
+   */
+  setUserScale(scaleFactor, immediate = false) {
+    const minS = (this._manipCfg && this._manipCfg.minScale) || 0.40;
+    const maxS = (this._manipCfg && this._manipCfg.maxScale) || 2.80;
+    this.targetUserScale = clamp(scaleFactor, minS, maxS);
+    if (immediate) {
+      this.userScale = this.targetUserScale;
+    }
+  }
+
+  /**
+   * Set target user rotation orientation
+   * @param {THREE.Euler|number} eulerOrX - Euler object or X angle in radians
+   * @param {number} [y=0] - Y angle in radians
+   * @param {number} [z=0] - Z angle in radians
+   * @param {boolean} [immediate=false]
+   */
+  setUserRotation(eulerOrX, y = 0, z = 0, immediate = false) {
+    if (eulerOrX && typeof eulerOrX === 'object' && 'isEuler' in eulerOrX) {
+      this.targetUserRotation.copy(eulerOrX);
+    } else if (typeof eulerOrX === 'number') {
+      this.targetUserRotation.set(eulerOrX, y, z);
+    }
+    if (immediate) {
+      this.userRotation.copy(this.targetUserRotation);
+      this.rotation.copy(this.userRotation);
+    }
+  }
+
+  /**
+   * Reset user-controlled scale and rotation to defaults
+   * @param {boolean} [immediate=false]
+   */
+  resetUserTransforms(immediate = false) {
+    this.targetUserScale = 1.0;
+    this.targetUserRotation.set(0, 0, 0);
+    if (immediate) {
+      this.userScale = 1.0;
+      this.userRotation.set(0, 0, 0);
+      this.rotation.set(0, 0, 0);
+    }
+  }
+
+  /**
+   * Reset object position to initial spawn point and restore default user transforms
    */
   resetPosition() {
     this.position.copy(this.initialPosition);
     this.targetPosition.copy(this.initialPosition);
+    this.resetUserTransforms(true);
   }
 
   /**
