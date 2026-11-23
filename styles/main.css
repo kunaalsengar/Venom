@@ -1,0 +1,237 @@
+/* ==========================================================================
+   PROJECT NEXUS — CORE DESIGN TOKENS & BASE LAYOUT (main.css)
+   Phase 1, Step 3: Core Application Layout & Futuristic UI Foundation
+   ========================================================================== */
+
+:root {
+  /* ---- Color Palette (Futuristic Dark Navy / Electric Blue / Cyan) ---- */
+  --bg-deep: #050816;
+  --bg-secondary: #0b1224;
+  --bg-panel: rgba(16, 27, 48, 0.76);
+  --bg-panel-hover: rgba(22, 38, 68, 0.88);
+  --bg-panel-active: rgba(30, 58, 110, 0.92);
+  --bg-panel-solid: #101b30;
+
+  /* ---- Accent Glows & Lights ---- */
+  --primary-blue: #2563eb;
+  --primary-blue-glow: rgba(37, 99, 235, 0.45);
+  --cyan-accent: #22d3ee;
+  --cyan-accent-glow: rgba(34, 211, 238, 0.40);
+  --cyan-accent-dim: rgba(34, 211, 238, 0.12);
+
+  /* ---- Status Colors ---- */
+  --status-green: #10b981;
+  --status-green-glow: rgba(16, 185, 129, 0.45);
+  --status-amber: #f59e0b;
+  --status-amber-glow: rgba(245, 158, 11, 0.45);
+  --status-red: #ef4444;
+  --status-red-glow: rgba(239, 68, 68, 0.45);
+
+  /* ---- Typography Colors ---- */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --text-muted: #475569;
+
+  /* ---- Borders & Glassmorphism ---- */
+  --border-subtle: rgba(148, 163, 184, 0.18);
+  --border-glow: rgba(34, 211, 238, 0.35);
+  --border-active: rgba(34, 211, 238, 0.70);
+  --glass-blur: blur(14px);
+
+  /* ---- Geometry & Spacing ---- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 20px;
+
+  /* ---- Typography Stacks ---- */
+  --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* ---- Animations & Easing ---- */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Base & Viewport Reset ---- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-deep);
+  background-image: 
+    radial-gradient(circle at 50% 30%, rgba(11, 18, 36, 0.8) 0%, rgba(5, 8, 22, 1) 85%),
+    linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.02) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Offscreen / Background Video Feed (Processed by Three.js & MediaPipe) ---- */
+#webcam-video {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0.001;
+  pointer-events: none;
+}
+
+/* ---- WebGL Display Canvas (Main 3D Viewport) ---- */
+#webgl-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  cursor: crosshair;
+  z-index: 2;
+}
+
+/* ---- Ambient Sci-Fi Vignette Overlay ---- */
+.vignette-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 45%, rgba(5, 8, 22, 0.78) 100%);
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* ---- Notification / Status Banner Pill ---- */
+#status-banner {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  padding: 6px 16px;
+  background: rgba(11, 18, 36, 0.88);
+  border: 1px solid var(--border-subtle);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 12px rgba(34, 211, 238, 0.08);
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+}
+
+#status-banner.warning {
+  border-color: var(--status-amber-glow);
+  color: #fef3c7;
+  background: rgba(30, 20, 10, 0.88);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-green);
+  box-shadow: 0 0 8px var(--status-green);
+  display: inline-block;
+}
+
+#status-banner.warning .status-dot {
+  background: var(--status-amber);
+  box-shadow: 0 0 8px var(--status-amber);
+}
+
+/* ---- Loading Screen Overlay ---- */
+#loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg-deep);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s;
+}
+
+#loading-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.symbiote-spinner {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  position: relative;
+  background: radial-gradient(circle at 35% 35%, #1e293b, #050816 75%);
+  box-shadow: 0 0 32px var(--cyan-accent-glow), inset 0 0 16px rgba(34, 211, 238, 0.2);
+  animation: symbiotePulse 2.4s ease-in-out infinite;
+}
+
+.symbiote-spinner::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--cyan-accent);
+  border-right-color: rgba(34, 211, 238, 0.4);
+  animation: spinnerRotate 1.2s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+}
+
+@keyframes spinnerRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes symbiotePulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.2)); }
+  50% { transform: scale(1.06); filter: drop-shadow(0 0 24px rgba(34, 211, 238, 0.45)); }
+}
+
+.loading-title {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  text-shadow: 0 0 16px rgba(34, 211, 238, 0.5);
+}
+
+.loading-msg {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 340px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ---- Reduced Motion Accessibility ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

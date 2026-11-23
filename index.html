@@ -3,204 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>SYMBIOTE HAND — Venom Cinematic Experience</title>
-  <style>
-    /* ---- Base Reset ---- */
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #020204;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #e5e7eb;
-    }
-
-    /* ---- Hidden Processing Video Feed ---- */
-    #webcam-video {
-      position: absolute;
-      top: -9999px;
-      left: -9999px;
-      width: 1px;
-      height: 1px;
-      opacity: 0.001;
-      pointer-events: none;
-    }
-
-    /* ---- WebGL Display Canvas (Main Fullscreen Viewport) ---- */
-    #webgl-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      display: block;
-      cursor: crosshair;
-      z-index: 2;
-    }
-
-    /* ---- Minimalist Monospace HUD (Top-Left) ---- */
-    #hud {
-      position: absolute;
-      top: 14px;
-      left: 16px;
-      z-index: 10;
-      font-family: "SF Mono", Monaco, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 11px;
-      letter-spacing: 0.08em;
-      color: #d1d5db;
-      background: rgba(4, 4, 8, 0.78);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      padding: 6px 12px;
-      border-radius: 4px;
-      pointer-events: auto;
-      user-select: none;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-      transition: opacity 0.2s ease, transform 0.2s ease;
-    }
-    #hud.hidden {
-      opacity: 0;
-      pointer-events: none;
-      transform: translateY(-4px);
-    }
-    .hud-title {
-      color: #ffffff;
-      font-weight: 700;
-    }
-    .hud-accent {
-      color: #60a5fa;
-      font-weight: 700;
-    }
-    .hud-fps {
-      color: #f3f4f6;
-    }
-    .hud-dim {
-      color: #6b7280;
-    }
-    .hud-btn {
-      background: transparent;
-      border: none;
-      color: #93c5fd;
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 11px;
-      text-decoration: underline;
-      padding: 0 2px;
-    }
-    .hud-btn:hover {
-      color: #ffffff;
-    }
-
-    /* ---- Notification / Status Pill ---- */
-    #status-banner {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      padding: 6px 14px;
-      background: rgba(10, 10, 16, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border-radius: 16px;
-      font-family: "SF Mono", Monaco, monospace;
-      font-size: 11px;
-      color: #9ca3af;
-      letter-spacing: 0.04em;
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-      transition: opacity 0.3s ease;
-    }
-    #status-banner.warning {
-      border-color: rgba(245, 158, 11, 0.4);
-      color: #fef3c7;
-    }
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 6px #10b981;
-    }
-    #status-banner.warning .status-dot {
-      background: #f59e0b;
-      box-shadow: 0 0 6px #f59e0b;
-    }
-
-    /* ---- Initial Loading Screen ---- */
-    #loading-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      background: #020204;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 18px;
-      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s;
-    }
-    #loading-overlay.hidden {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-    }
-    .symbiote-spinner {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      position: relative;
-      background: radial-gradient(circle at 35% 35%, #1f2937, #020205 70%);
-      box-shadow: 0 0 28px rgba(255, 255, 255, 0.15), inset 0 0 14px rgba(255, 255, 255, 0.1);
-      animation: symbiotePulse 2.4s ease-in-out infinite;
-    }
-    .symbiote-spinner::after {
-      content: "";
-      position: absolute;
-      inset: -3px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      border-top-color: #ffffff;
-      border-right-color: rgba(255, 255, 255, 0.3);
-      animation: spinnerRotate 1.2s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
-    }
-    @keyframes spinnerRotate {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    @keyframes symbiotePulse {
-      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.1)); }
-      50% { transform: scale(1.06); filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.3)); }
-    }
-    .loading-title {
-      font-size: 16px;
-      font-weight: 800;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: #ffffff;
-      text-shadow: 0 0 14px rgba(255, 255, 255, 0.4);
-    }
-    .loading-msg {
-      font-size: 12px;
-      color: #9ca3af;
-      max-width: 320px;
-      text-align: center;
-      line-height: 1.5;
-    }
-  </style>
+  <title>PROJECT NEXUS — Futuristic Spatial Gesture Experience</title>
+  <!-- Stylesheets (Design Tokens & Futuristic HUD Layout) -->
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/hud.css">
 
   <!-- Pinned Import Map (Three.js 0.160.0 + Examples Addons + MediaPipe 0.10.14) -->
   <script type="importmap">
@@ -221,17 +27,156 @@
   <!-- Main Three.js Canvas -->
   <canvas id="webgl-canvas"></canvas>
 
-  <!-- Minimalist Monospace HUD -->
+  <!-- Ambient Sci-Fi Vignette Overlay -->
+  <div class="vignette-overlay"></div>
+
+  <!-- Primary Fullscreen HUD Overlay Container -->
   <div id="hud">
-    <span class="hud-title">SYMBIOTE</span>
-    <span class="hud-dim">//</span>
-    <span id="gesture-display" class="hud-accent">IDLE</span>
-    <span class="hud-dim">&bull;</span>
-    <span id="fps-display" class="hud-fps">-- FPS</span>
-    <span class="hud-dim">&bull;</span>
-    <span id="tracking-display">WEBCAM</span>
-    <span class="hud-dim">&bull;</span>
-    <span class="hud-dim">[H: hide | <button id="toggle-fallback-btn" class="hud-btn">M: mouse</button>]</span>
+    <!-- Region B: Top System Header -->
+    <header class="nexus-header nexus-interactive">
+      <div class="nexus-branding">
+        <div class="nexus-logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+        </div>
+        <div class="nexus-title-group">
+          <span class="nexus-title">PROJECT NEXUS</span>
+          <span class="nexus-version-tag">SYSTEM v1.0 // SPATIAL CORE</span>
+        </div>
+      </div>
+
+      <div class="nexus-header-center">
+        <div class="nexus-pill">
+          <span class="nexus-beacon"></span>
+          <span>SYS ONLINE</span>
+        </div>
+        <div id="camera-status-pill" class="nexus-pill nexus-pill-highlight">
+          <span>CAMERA: ACTIVE</span>
+        </div>
+        <div class="nexus-pill">
+          <span id="tracking-display">WEBCAM</span>
+        </div>
+      </div>
+
+      <div class="nexus-header-actions">
+        <button id="toggle-fallback-btn" class="nexus-btn">
+          <span>M: MOUSE</span>
+        </button>
+        <button id="hud-toggle-btn" class="nexus-btn" title="Toggle HUD Display [H]">
+          <span>HUD [H]</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Region C: Left Control Panel (Experience Modes) -->
+    <aside class="nexus-left-panel nexus-interactive">
+      <div class="nexus-panel-header">
+        <div class="nexus-panel-title">Experience Modes</div>
+        <span class="nexus-version-tag">PHASE 1</span>
+      </div>
+      <div class="nexus-mode-list">
+        <div class="nexus-mode-card active" data-mode="hologram">
+          <div class="nexus-mode-row">
+            <span class="nexus-mode-name">Hologram Mode</span>
+            <span class="nexus-mode-badge">ACTIVE</span>
+          </div>
+          <p class="nexus-mode-desc">Interactive spatial 3D holographic projection &amp; hand manipulation.</p>
+        </div>
+        <div class="nexus-mode-card" data-mode="particle">
+          <div class="nexus-mode-row">
+            <span class="nexus-mode-name">Particle Mode</span>
+            <span class="nexus-mode-badge">READY</span>
+          </div>
+          <p class="nexus-mode-desc">GPU particle physics simulation responding dynamically to gestural fields.</p>
+        </div>
+        <div class="nexus-mode-card" data-mode="energy">
+          <div class="nexus-mode-row">
+            <span class="nexus-mode-name">Energy Mode</span>
+            <span class="nexus-mode-badge">READY</span>
+          </div>
+          <p class="nexus-mode-desc">Cinematic energy tendrils, electric arcs, and volumetric liquid dynamics.</p>
+        </div>
+        <div class="nexus-mode-card disabled" data-mode="combat">
+          <div class="nexus-mode-row">
+            <span class="nexus-mode-name">Combat Mode</span>
+            <span class="nexus-mode-badge">PHASE 6</span>
+          </div>
+          <p class="nexus-mode-desc">Repulsor blasts, force fields, and dual-hand kinetic combat targeting.</p>
+        </div>
+        <div class="nexus-mode-card disabled" data-mode="diagnostic">
+          <div class="nexus-mode-row">
+            <span class="nexus-mode-name">Diagnostic Mode</span>
+            <span class="nexus-mode-badge">PHASE 7</span>
+          </div>
+          <p class="nexus-mode-desc">Full biomechanical mesh diagnostics, landmark inspection, and telemetry.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Region D: Central Experience Area (Pointer-events transparent) -->
+    <main class="nexus-center-viewport" aria-hidden="true"></main>
+
+    <!-- Region E: Right Telemetry Panel -->
+    <aside class="nexus-right-panel nexus-interactive">
+      <div class="nexus-panel-header">
+        <div class="nexus-panel-title">Telemetry &amp; Biometrics</div>
+        <span class="nexus-version-tag">LIVE</span>
+      </div>
+      <div class="nexus-telemetry-grid">
+        <div class="nexus-telemetry-row">
+          <span class="nexus-telemetry-label">FRAME RATE</span>
+          <span id="fps-display" class="nexus-telemetry-value">-- FPS</span>
+        </div>
+        <div class="nexus-telemetry-row">
+          <span class="nexus-telemetry-label">HAND PRESENCE</span>
+          <span id="hand-presence-text" class="nexus-telemetry-value">SCANNING</span>
+        </div>
+        <div class="nexus-telemetry-row">
+          <span class="nexus-telemetry-label">GESTURE STATE</span>
+          <span id="gesture-display" class="gesture-badge">IDLE</span>
+        </div>
+        <div class="nexus-telemetry-row">
+          <span class="nexus-telemetry-label">HAND SCALE</span>
+          <span id="hand-scale-display" class="nexus-telemetry-value">0.80</span>
+        </div>
+        <div class="nexus-telemetry-row">
+          <span class="nexus-telemetry-label">DEPTH ESTIMATE (Z)</span>
+          <span id="depth-display" class="nexus-telemetry-value">0.00</span>
+        </div>
+        <div class="nexus-telemetry-row">
+          <span class="nexus-telemetry-label">PIPELINE</span>
+          <span class="nexus-telemetry-value" style="color: var(--cyan-accent);">WEBGL 2 // SDF</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Region F: Bottom Control Bar -->
+    <footer class="nexus-bottom-bar nexus-interactive">
+      <div class="nexus-bottom-left">
+        <span id="active-mode-tag" class="nexus-mode-tag">HOLOGRAM MODE</span>
+        <div class="nexus-hints-strip">
+          <span><strong>Gestures:</strong> Open Hand (idle/radiate)</span>
+          <span>&bull;</span>
+          <span>Fist (condense/armor)</span>
+          <span>&bull;</span>
+          <span>Pinch (sticky focus)</span>
+          <span>&bull;</span>
+          <span>Fast Sweep (spread burst)</span>
+        </div>
+      </div>
+      <div class="nexus-bottom-actions">
+        <span class="nexus-hints-strip">
+          <span><strong>[H]</strong> Hide UI</span>
+          <span>&bull;</span>
+          <span><strong>[M]</strong> Toggle Mouse</span>
+          <span>&bull;</span>
+          <span><strong>[Wheel]</strong> Depth Z</span>
+        </span>
+      </div>
+    </footer>
   </div>
 
   <!-- Notification Banner -->
@@ -254,76 +199,73 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-    import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+    // Modular Architecture Imports (Phase 1 & Phase 2)
+    import { AppConfig } from './src/config/AppConfig.js';
+    import { Events, eventBus } from './src/core/EventBus.js';
+    import { stateManager } from './src/core/StateManager.js';
+    import { uiManager } from './src/ui/UIManager.js';
+    import { cameraManager } from './src/camera/CameraManager.js';
+    import { handTracker } from './src/tracking/HandTracker.js';
+    import { landmarkProcessor } from './src/tracking/LandmarkProcessor.js';
+    import { gestureRecognizer } from './src/gestures/GestureRecognizer.js';
+    import { gestureCombinationEngine } from './src/gestures/GestureCombinationEngine.js';
+    import { gestureMapper } from './src/gestures/GestureMapper.js';
+    import { hologramManager } from './src/hologram/HologramManager.js';
+    import { interactionEngine } from './src/interaction/InteractionEngine.js';
+    import { holographicObjectManager } from './src/interaction/HolographicObjectManager.js';
+    import { dist3, clamp, lerp, expDecayAlpha, getFrustumSizeAt, screenToWorld } from './src/utils/MathUtils.js';
 
     // =========================================================================
-    // SECTION 1: GLOBAL CONFIGURATION
+    // SECTION 1: GLOBAL CONFIGURATION (Centralized via AppConfig)
     // =========================================================================
     const CONFIG = Object.freeze({
-      // MediaPipe CDN Assets
-      wasmPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
-      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      // MediaPipe Assets
+      wasmPath: AppConfig.tracking.wasmPath,
+      modelAssetPath: AppConfig.tracking.modelAssetPath,
 
-      // Accent Particle System Parameters (reduced to ~3,000 droplets)
-      particleCount: 3000,
-      particleBaseSize: 11.0,
+      // Accent Particle System Parameters (~3,000 droplets)
+      particleCount: AppConfig.particles.count,
+      particleBaseSize: AppConfig.particles.baseSize,
 
       // Pinch Sticky Strands & Thresholds
-      pinchThreshold: 0.25,        // d / handSize < 0.25 = PINCH
-      pinchSnapThreshold: 1.25,    // d / handSize > 1.25 = SNAP
-      spreadSpeedThreshold: 1.85,  // Fast hand speed triggers SPREAD burst
-      hysteresisFrames: 3,         // Consecutive stable frames required to commit gesture
+      pinchThreshold: AppConfig.gestures.pinchThreshold,
+      pinchSnapThreshold: AppConfig.gestures.pinchSnapThreshold,
+      spreadSpeedThreshold: AppConfig.gestures.spreadSpeedThreshold,
+      hysteresisFrames: AppConfig.gestures.hysteresisFrames,
 
       // Camera & Rendering
-      cameraFov: 50,
-      cameraZ: 4.8,
-      maxDpr: 2,
-      initialResScale: 0.65,       // Raymarch render target scale (0.5 to 0.75)
-      maxRaymarchSteps: 48         // Strict 48 step cap for 60 FPS
+      cameraFov: AppConfig.rendering.cameraFov,
+      cameraZ: AppConfig.rendering.cameraZ,
+      maxDpr: AppConfig.rendering.maxDpr,
+      initialResScale: AppConfig.rendering.initialResScale,
+      maxRaymarchSteps: AppConfig.rendering.maxRaymarchSteps
     });
 
     // =========================================================================
-    // SECTION 2: DOM REFERENCES & RUNTIME STATE
+    // SECTION 2: DOM REFERENCES & RUNTIME STATE (StateManager & UIManager)
     // =========================================================================
     const videoEl = document.getElementById('webcam-video');
     const canvasEl = document.getElementById('webgl-canvas');
-    const hudEl = document.getElementById('hud');
     const loadingOverlay = document.getElementById('loading-overlay');
-    const loadingDesc = document.getElementById('loading-desc');
-    const statusBanner = document.getElementById('status-banner');
-    const statusText = document.getElementById('status-text');
-    const fpsDisplay = document.getElementById('fps-display');
-    const gestureDisplay = document.getElementById('gesture-display');
-    const trackingDisplay = document.getElementById('tracking-display');
-    const toggleFallbackBtn = document.getElementById('toggle-fallback-btn');
 
-    const state = {
-      isMouseFallback: false,
-      handDetected: false,
-      currentGesture: 'IDLE',      // 'IDLE', 'OPEN', 'FIST', 'PINCH', 'SPREAD'
-      pendingGesture: 'IDLE',
-      gestureStableCount: 0,
-      handSize: 0.8,
-      handSpeed: 0.0,
-      wristSpeed: 0.0,
+    // Centralized Reactive Application State
+    const state = stateManager.state;
 
-      // Gesture smooth morph weights (0.0 to 1.0)
-      fistFactor: 0.0,
-      openFactor: 0.0,
-      pinchFactor: 0.0,
-      spreadFactor: 0.0,
-      pinchDistanceRatio: 1.0,
-
-      // Smoothed 3D landmarks (21 points)
-      landmarks: Array.from({ length: 21 }, () => new THREE.Vector3(0, 0, 0)),
-      prevWrist: new THREE.Vector3(0, 0, 0),
-      palmCenter: new THREE.Vector3(0, 0, 0),
-      boundingRadius: 1.8,
-
-      // Dynamic adaptive resolution scaling
-      resScale: CONFIG.initialResScale,
-      hasVideoTexture: false
-    };
+    // Expose safe global debug reference for browser console inspection
+    if (typeof window !== 'undefined') {
+      if (!window.stateManager) window.stateManager = stateManager;
+      if (!window.landmarkProcessor) window.landmarkProcessor = landmarkProcessor;
+      if (!window.gestureRecognizer) window.gestureRecognizer = gestureRecognizer;
+      if (!window.pinchDetector) window.pinchDetector = gestureRecognizer.pinchDetector;
+      if (!window.swipeDetector) window.swipeDetector = gestureRecognizer.swipeDetector;
+      if (!window.fingerDetector) window.fingerDetector = gestureRecognizer.fingerDetector;
+      if (!window.combinationEngine) window.combinationEngine = gestureCombinationEngine;
+      if (!window.gestureMapper) window.gestureMapper = gestureMapper;
+      if (!window.hologramManager) window.hologramManager = hologramManager;
+      if (!window.interactionEngine) window.interactionEngine = interactionEngine;
+      if (!window.holographicObjectManager) window.holographicObjectManager = holographicObjectManager;
+    }
 
     // Mouse Fallback Controller
     const mouseInput = {
@@ -368,27 +310,22 @@
     );
     camera.position.set(0, 0, CONFIG.cameraZ);
 
+    // Initialize 3D Holographic Interface Foundation (Phase 4, Step 4.1)
+    hologramManager.init(scene, camera);
+
+    // Initialize Dual-Hand 3D Interaction Engine (Phase 4, Step 4.2)
+    interactionEngine.init(hologramManager.scene, camera);
+
+    // Initialize Gesture-Controlled Holographic Objects (Phase 4, Step 4.3)
+    holographicObjectManager.init(hologramManager.scene, camera);
+
     // Orthographic Scene for Raymarching Quad
     const sdfScene = new THREE.Scene();
     const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-    // Screen dimension helper at depth Z
-    function getFrustumSizeAt(depthZ) {
-      const dist = camera.position.z - depthZ;
-      const height = 2.0 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-      const width = height * camera.aspect;
-      return { width, height };
-    }
-
-    // Map normalized MediaPipe (u, v, z) into Three.js 3D world space
-    // NOTE: Hard constraint: u = 1.0 - landmark.x matches mirrored camera feed
-    function screenToWorld(u, v, zNorm, outVec) {
-      const worldZ = (zNorm !== undefined ? -zNorm * 1.8 : 0);
-      const f = getFrustumSizeAt(worldZ);
-      outVec.x = (u - 0.5) * f.width;
-      outVec.y = (0.5 - v) * f.height;
-      outVec.z = worldZ;
-      return outVec;
+    // Coordinate conversion helper binding camera to MathUtils
+    function screenToWorldCoords(u, v, zNorm, outVec) {
+      return screenToWorld(u, v, zNorm, camera, outVec);
     }
 
     // =========================================================================
@@ -1047,176 +984,104 @@
     composer.addPass(finalPass);
 
     // =========================================================================
-    // SECTION 8: GESTURE DETECTION (Pure Functions)
+    // SECTION 8: GESTURE DETECTION (Modular GestureRecognizer Integration)
     // =========================================================================
-    function dist3(a, b) {
-      return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-    }
-
     function evaluateGesture(landmarks, handSpeed) {
-      const wrist = landmarks[0];
-      const middleMCP = landmarks[9];
-      const handSize = Math.max(0.12, dist3(wrist, middleMCP));
-
-      const dIndexTip = dist3(landmarks[8], wrist);
-      const dIndexPip = dist3(landmarks[6], wrist);
-
-      const dMiddleTip = dist3(landmarks[12], wrist);
-      const dMiddlePip = dist3(landmarks[10], wrist);
-
-      const dRingTip = dist3(landmarks[16], wrist);
-      const dRingPip = dist3(landmarks[14], wrist);
-
-      const dPinkyTip = dist3(landmarks[20], wrist);
-      const dPinkyPip = dist3(landmarks[18], wrist);
-
-      const allExtended = (
-        dIndexTip > dIndexPip &&
-        dMiddleTip > dMiddlePip &&
-        dRingTip > dRingPip &&
-        dPinkyTip > dPinkyPip
-      );
-
-      const allCurled = (
-        dIndexTip < dIndexPip &&
-        dMiddleTip < dMiddlePip &&
-        dRingTip < dRingPip &&
-        dPinkyTip < dPinkyPip
-      );
-
-      const pinchDist = dist3(landmarks[4], landmarks[8]);
-      const pinchRatio = pinchDist / handSize;
-
-      // 1. FIST takes priority when all 4 fingers are curled
-      if (allCurled) {
-        return { gesture: 'FIST', handSize, pinchRatio };
+      const primaryHand = landmarkProcessor.getPrimaryHand();
+      if (primaryHand && primaryHand.landmarks === landmarks) {
+        return gestureRecognizer.classify(primaryHand);
       }
-
-      // 2. PINCH condition
-      if (pinchRatio < CONFIG.pinchThreshold) {
-        return { gesture: 'PINCH', handSize, pinchRatio };
-      }
-
-      // 3. SPREAD burst (open palm moving rapidly)
-      if (allExtended && handSpeed > CONFIG.spreadSpeedThreshold) {
-        return { gesture: 'SPREAD', handSize, pinchRatio };
-      }
-
-      // 4. OPEN palm
-      if (allExtended) {
-        return { gesture: 'OPEN', handSize, pinchRatio };
-      }
-
-      return { gesture: 'OPEN', handSize, pinchRatio };
+      const fallbackState = {
+        detected: true,
+        confidence: 1.0,
+        landmarks: landmarks,
+        handSpeed: handSpeed,
+        handSize: dist3(landmarks[0], landmarks[9]),
+        metrics: primaryHand ? primaryHand.metrics : null
+      };
+      return gestureRecognizer.classify(fallbackState);
     }
 
     // =========================================================================
-    // SECTION 9: CAM & MEDIAPIPE INITIALIZATION (GPU with CPU Fallback)
+    // SECTION 9: CAM & MEDIAPIPE INITIALIZATION (HandTracker & CameraManager)
     // =========================================================================
-    let handLandmarker = null;
-    let lastVideoTime = -1;
-
     async function initMediaPipeAndCamera() {
+      // Global startup watchdog ensures loading screen cannot hang indefinitely
+      const startupWatchdogMs = AppConfig.tracking.startupWatchdogMs || 25000;
+      let watchdogTimedOut = false;
+      const watchdogTimer = setTimeout(() => {
+        watchdogTimedOut = true;
+        console.warn('[PROJECT NEXUS] Startup watchdog reached (25s). Dismissing loading screen & activating mouse fallback.');
+        activateMouseFallback('Initialization timed out. Mouse fallback active.');
+      }, startupWatchdogMs);
+
       try {
-        loadingDesc.textContent = 'Loading MediaPipe Tasks Vision WASM...';
-        const vision = await FilesetResolver.forVisionTasks(CONFIG.wasmPath);
+        uiManager.setLoadingMessage('Loading MediaPipe WASM runtime...');
+        // 1. Initialize HandLandmarker via HandTracker (attempt GPU delegate with CPU fallback)
+        handTracker.init(videoEl);
+        await handTracker.initialize();
 
-        loadingDesc.textContent = 'Initializing HandLandmarker (attempting GPU delegate)...';
-        try {
-          handLandmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: CONFIG.modelAssetPath,
-              delegate: 'GPU'
-            },
-            runningMode: 'VIDEO',
-            numHands: 2
-          });
-          trackingDisplay.textContent = 'WEBCAM (GPU)';
-        } catch (gpuErr) {
-          console.warn('[SYMBIOTE] GPU delegate failed, falling back to CPU delegate:', gpuErr);
-          loadingDesc.textContent = 'GPU unavailable. Falling back to CPU delegate...';
-          handLandmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: CONFIG.modelAssetPath,
-              delegate: 'CPU'
-            },
-            runningMode: 'VIDEO',
-            numHands: 2
-          });
-          trackingDisplay.textContent = 'WEBCAM (CPU)';
-        }
+        if (watchdogTimedOut) return;
 
-        // Camera stream
-        loadingDesc.textContent = 'Requesting camera stream...';
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'user',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        });
+        // 2. Dedicated Camera Stream Acquisition via CameraManager (Phase 2, Step 2.1)
+        uiManager.setLoadingMessage('Acquiring camera stream via CameraManager...');
+        cameraManager.init(videoEl);
+        await cameraManager.start();
 
-        videoEl.srcObject = stream;
-        await new Promise((resolve) => {
-          let resolved = false;
-          const done = () => {
-            if (resolved) return;
-            resolved = true;
-            resolve();
-          };
-          const timer = setTimeout(done, 3000);
-          videoEl.onloadedmetadata = () => {
-            videoEl.play().then(() => {
-              state.hasVideoTexture = true;
-              finalPass.uniforms.uHasVideo.value = 1.0;
-              clearTimeout(timer);
-              done();
-            }).catch(done);
-          };
-        });
+        if (watchdogTimedOut) return;
+        clearTimeout(watchdogTimer);
 
-        statusText.textContent = 'Tracking active: Face camera & position hand';
-        loadingOverlay.classList.add('hidden');
+        state.hasVideoTexture = true;
+        finalPass.uniforms.uHasVideo.value = 1.0;
+
+        uiManager.showNotification('Tracking active: Face camera & position hand', 'info');
+        uiManager.hideLoading();
+
+        // Mark application fully ready only after required subsystems are initialized
+        window.__symbioteReady = true;
+        window.__nexusReady = true;
       } catch (err) {
-        console.warn('[SYMBIOTE] Camera or MediaPipe initialization failed:', err);
+        clearTimeout(watchdogTimer);
+        if (watchdogTimedOut) return;
+        console.warn('[PROJECT NEXUS] Camera or HandTracker initialization failed:', err);
         activateMouseFallback(
-          `Camera / Model notice: ${err.name || 'Unavailable'}. Mouse fallback active.`
+          `Notice: ${err.message || err.name || 'Unavailable'}. Mouse fallback active.`
         );
       }
     }
 
     function activateMouseFallback(reason) {
-      state.isMouseFallback = true;
-      toggleFallbackBtn.textContent = 'M: camera';
-      trackingDisplay.textContent = 'MOUSE FALLBACK';
-      trackingDisplay.style.color = '#f59e0b';
-      statusBanner.classList.add('warning');
-      statusText.textContent = reason || 'Mouse fallback active';
-      loadingOverlay.classList.add('hidden');
+      cameraManager.stop();
+      stateManager.setMouseFallback(true, reason);
+      uiManager.hideLoading();
       state.hasVideoTexture = false;
       finalPass.uniforms.uHasVideo.value = 0.0;
+      window.__symbioteReady = true;
+      window.__nexusReady = true;
     }
 
-    function deactivateMouseFallback() {
-      if (!handLandmarker) {
-        statusText.textContent = 'Camera / Model unavailable; cannot return to camera.';
+    async function deactivateMouseFallback() {
+      if (!handTracker.isReady()) {
+        uiManager.showNotification('HandTracker unavailable; cannot return to camera.', 'warning');
         return;
       }
-      state.isMouseFallback = false;
-      toggleFallbackBtn.textContent = 'M: mouse';
-      trackingDisplay.textContent = 'WEBCAM';
-      trackingDisplay.style.color = '#60a5fa';
-      statusBanner.classList.remove('warning');
-      statusText.textContent = 'Camera tracking restored.';
-      state.hasVideoTexture = true;
-      finalPass.uniforms.uHasVideo.value = 1.0;
+      try {
+        uiManager.setLoadingMessage('Re-activating camera stream...');
+        await cameraManager.start();
+        stateManager.setMouseFallback(false);
+        state.hasVideoTexture = true;
+        finalPass.uniforms.uHasVideo.value = 1.0;
+      } catch (err) {
+        activateMouseFallback(`Failed to reactivate camera: ${err.message || err.name}`);
+      }
     }
 
-    toggleFallbackBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (state.isMouseFallback) deactivateMouseFallback();
-      else activateMouseFallback('Mouse control toggled by user.');
+    // Initialize UI Manager with callbacks
+    uiManager.init({
+      onToggleFallback: (isFallback) => {
+        if (isFallback) activateMouseFallback('Mouse control toggled by user.');
+        else deactivateMouseFallback();
+      }
     });
 
     // =========================================================================
@@ -1227,7 +1092,7 @@
     function updateSyntheticMouseHand(dt) {
       const targetScreenU = mouseInput.clientX / window.innerWidth;
       const targetScreenV = mouseInput.clientY / window.innerHeight;
-      const targetWorld = screenToWorld(targetScreenU, targetScreenV, mouseInput.depthZ, new THREE.Vector3());
+      const targetWorld = screenToWorldCoords(targetScreenU, targetScreenV, mouseInput.depthZ, new THREE.Vector3());
 
       const lerpSpd = 1.0 - Math.exp(-14.0 * dt);
       mouseInput.targetX += (targetWorld.x - mouseInput.targetX) * lerpSpd;
@@ -1255,7 +1120,9 @@
       if (isFist) {
         _tempLM[4].set(cx - 0.10 * scale, cy + 0.02 * scale, cz);
       } else if (isPinch) {
-        _tempLM[4].set(cx - 0.04 * scale, cy + 0.22 * scale, cz);
+        // Align thumb tip with index fingertip coordinate plane to maintain zero coordinate jump
+        _tempLM[3].set(cx - 0.18 * scale, cy + 0.36 * scale, cz);
+        _tempLM[4].set(cx - 0.14 * scale, cy + 0.52 * scale, cz);
       } else {
         _tempLM[4].set(cx - 0.35 * scale, cy + 0.16 * scale, cz);
       }
@@ -1267,9 +1134,10 @@
         _tempLM[7].set(cx - 0.12 * scale, cy + 0.10 * scale, cz);
         _tempLM[8].set(cx - 0.12 * scale, cy - 0.02 * scale, cz);
       } else if (isPinch) {
-        _tempLM[6].set(cx - 0.10 * scale, cy + 0.24 * scale, cz);
-        _tempLM[7].set(cx - 0.06 * scale, cy + 0.24 * scale, cz);
-        _tempLM[8].set(cx - 0.02 * scale, cy + 0.23 * scale, cz);
+        // Pinch focal midpoint ((LM4 + LM8) / 2) matches pointing index position (cx - 0.12, cy + 0.52)
+        _tempLM[6].set(cx - 0.12 * scale, cy + 0.36 * scale, cz);
+        _tempLM[7].set(cx - 0.11 * scale, cy + 0.44 * scale, cz);
+        _tempLM[8].set(cx - 0.10 * scale, cy + 0.52 * scale, cz);
       } else {
         _tempLM[6].set(cx - 0.12 * scale, cy + 0.28 * scale, cz);
         _tempLM[7].set(cx - 0.12 * scale, cy + 0.40 * scale, cz);
@@ -1328,12 +1196,13 @@
     });
 
     window.addEventListener('mousedown', (e) => {
-      if (e.target && typeof e.target.closest === 'function' && e.target.closest('#hud')) return;
-      if (e.button === 0) mouseInput.isLeftDown = true;
       if (e.button === 2) {
         e.preventDefault();
         mouseInput.isRightDown = true;
+        return;
       }
+      if (e.target && typeof e.target.closest === 'function' && e.target.closest('#hud')) return;
+      if (e.button === 0) mouseInput.isLeftDown = true;
     });
 
     window.addEventListener('mouseup', (e) => {
@@ -1353,7 +1222,7 @@
         else activateMouseFallback('Mouse control toggled via "M" key.');
       }
       if (e.key === 'h' || e.key === 'H') {
-        hudEl.classList.toggle('hidden');
+        stateManager.toggleHud();
       }
     });
 
@@ -1395,14 +1264,26 @@
       lastTimeMs = currentTimeMs;
       const time = currentTimeMs * 0.001;
 
+      // Update StateManager frame clock
+      stateManager.state.app.time = time;
+      stateManager.state.app.dt = dt;
+
       // FPS Telemetry & Adaptive Resolution Scaling
       frameCount++;
       fpsTimer += dt;
       if (fpsTimer >= 0.25) {
         currentFps = Math.round(frameCount / fpsTimer);
-        fpsDisplay.textContent = `${currentFps} FPS`;
+        stateManager.state.app.fps = currentFps;
         frameCount = 0;
         fpsTimer = 0;
+
+        // Update real-time spatial biometrics telemetry via UIManager
+        uiManager.updateTelemetry({
+          fps: currentFps,
+          handDetected: state.detectedHandsCount > 1 ? 'DUAL TRACKING' : state.handDetected,
+          handSize: state.handSize,
+          depthZ: (state.landmarks && state.landmarks[0]) ? state.landmarks[0].z : 0
+        });
 
         fpsHistory.push(currentFps);
         if (fpsHistory.length > 8) fpsHistory.shift();
@@ -1410,10 +1291,10 @@
 
         // Drop to 0.5 scale if FPS < 40; restore to 0.65 if FPS > 55
         if (avgFps < 40 && state.resScale > 0.52) {
-          state.resScale = 0.50;
+          stateManager.setResScale(0.50);
           updateRenderTargetSizes();
         } else if (avgFps > 55 && state.resScale < 0.62) {
-          state.resScale = 0.65;
+          stateManager.setResScale(0.65);
           updateRenderTargetSizes();
         }
       }
@@ -1423,36 +1304,70 @@
       // -----------------------------------------------------------------------
       let detectedEval = null;
 
-      if (!state.isMouseFallback && handLandmarker && videoEl.readyState >= 2) {
-        if (videoEl.currentTime !== lastVideoTime) {
-          lastVideoTime = videoEl.currentTime;
-          const detection = handLandmarker.detectForVideo(videoEl, currentTimeMs);
+      if (!state.isMouseFallback && handTracker.isReady() && videoEl.readyState >= 2) {
+        const detection = handTracker.detect(currentTimeMs);
 
-          if (detection.landmarks && detection.landmarks.length > 0) {
-            state.handDetected = true;
-            const rawLMs = detection.landmarks[0];
+        if (detection) {
+          const processed = landmarkProcessor.process(
+            detection,
+            dt,
+            currentTimeMs,
+            screenToWorldCoords
+          );
 
-            const alpha = 1.0 - Math.exp(-18.0 * dt);
-            for (let i = 0; i < 21; i++) {
-              const pt = rawLMs[i];
-              // Mirror coordinate: u = 1 - pt.x
-              screenToWorld(1.0 - pt.x, pt.y, pt.z, _rawPos);
-              state.landmarks[i].lerp(_rawPos, alpha);
-            }
-
-            const wristMove = dist3(state.landmarks[0], state.prevWrist);
-            state.wristSpeed = wristMove / Math.max(0.001, dt);
-            state.prevWrist.copy(state.landmarks[0]);
-            state.handSpeed = state.wristSpeed;
-
-            detectedEval = evaluateGesture(state.landmarks, state.handSpeed);
+          if (processed.detectedHandsCount > 0) {
+            const gestureRes = gestureRecognizer.process(
+              landmarkProcessor.hands,
+              currentTimeMs,
+              processed.primaryHand
+            );
+            gestureCombinationEngine.process(
+              landmarkProcessor.hands,
+              gestureRes,
+              currentTimeMs
+            );
+            detectedEval = {
+              gesture: gestureRes.gesture,
+              handSize: gestureRes.handSize,
+              pinchRatio: gestureRes.pinchRatio
+            };
+            state.lastEval = detectedEval;
           } else {
-            state.handDetected = false;
+            const gestureRes = gestureRecognizer.process(landmarkProcessor.hands, currentTimeMs, null);
+            gestureCombinationEngine.process(landmarkProcessor.hands, gestureRes, currentTimeMs);
+            state.lastEval = null;
           }
         }
       } else if (state.isMouseFallback) {
-        detectedEval = updateSyntheticMouseHand(dt);
+        updateSyntheticMouseHand(dt);
+        landmarkProcessor.processSynthetic(state.landmarks, state.handSpeed);
+        const gestureRes = gestureRecognizer.process(
+          landmarkProcessor.hands,
+          currentTimeMs,
+          state.tracking.primaryHand || 'right'
+        );
+        gestureCombinationEngine.process(
+          landmarkProcessor.hands,
+          gestureRes,
+          currentTimeMs
+        );
+        detectedEval = {
+          gesture: gestureRes.gesture,
+          handSize: gestureRes.handSize,
+          pinchRatio: gestureRes.pinchRatio
+        };
+        state.lastEval = detectedEval;
       }
+
+      // -----------------------------------------------------------------------
+      // Step A.2: Update Dual-Hand 3D Interaction Engine (Phase 4, Step 4.2)
+      // -----------------------------------------------------------------------
+      interactionEngine.update(landmarkProcessor.hands, dt, currentTimeMs);
+
+      // -----------------------------------------------------------------------
+      // Step A.3: Update Gesture-Controlled Holographic Objects (Phase 4, Step 4.3)
+      // -----------------------------------------------------------------------
+      holographicObjectManager.update(interactionEngine.controllers, dt, currentTimeMs);
 
       // Compute Palm Center & Bounding Radius
       if (state.handDetected) {
@@ -1478,27 +1393,25 @@
       // -----------------------------------------------------------------------
       // Step B: Gesture Transition & Smooth Factor Morphing
       // -----------------------------------------------------------------------
-      if (state.handDetected && detectedEval) {
-        state.handSize = detectedEval.handSize;
-        state.pinchDistanceRatio = detectedEval.pinchRatio;
+      const evalToUse = detectedEval || (state.handDetected ? state.lastEval : null);
+      if (state.handDetected && evalToUse) {
+        state.handSize = evalToUse.handSize;
+        state.pinchDistanceRatio = evalToUse.pinchRatio;
 
-        if (detectedEval.gesture === state.pendingGesture) {
-          state.gestureStableCount++;
-          if (state.gestureStableCount >= CONFIG.hysteresisFrames) {
-            state.currentGesture = detectedEval.gesture;
-          }
-        } else {
-          state.pendingGesture = detectedEval.gesture;
-          state.gestureStableCount = 1;
+        if (state.currentGesture !== evalToUse.gesture) {
+          stateManager.setGesture(evalToUse.gesture);
         }
-      } else {
-        state.currentGesture = 'IDLE';
+        state.pendingGesture = evalToUse.gesture;
+      } else if (!state.handDetected) {
+        if (state.currentGesture !== 'IDLE') {
+          stateManager.setGesture('IDLE');
+        }
         state.pendingGesture = 'IDLE';
         state.gestureStableCount = 0;
       }
 
       // Smooth gesture factors (0.0 to 1.0)
-      const morphSpd = 1.0 - Math.exp(-10.0 * dt);
+      const morphSpd = 1.0 - Math.exp(-AppConfig.gestures.morphSpeed * dt);
       const isFist = state.currentGesture === 'FIST';
       const isOpen = state.currentGesture === 'OPEN';
       const isPinch = state.currentGesture === 'PINCH';
@@ -1509,10 +1422,8 @@
       state.pinchFactor += ((isPinch ? 1.0 : 0.0) - state.pinchFactor) * morphSpd;
       state.spreadFactor += ((isSpread ? 1.0 : 0.0) - state.spreadFactor) * morphSpd;
 
-      // Update gesture display
-      if (gestureDisplay.textContent !== state.currentGesture) {
-        gestureDisplay.textContent = state.currentGesture;
-      }
+      // Update gesture display via UIManager
+      uiManager.updateTelemetry({ gesture: state.currentGesture });
 
       // -----------------------------------------------------------------------
       // Step C: Update SDF Raymarcher Uniforms & Render to Offscreen Target
@@ -1534,6 +1445,7 @@
       sdfRaymarchMaterial.uniforms.uCameraPos.value.copy(camera.position);
       sdfRaymarchMaterial.uniforms.uCameraWorldMatrix.value.copy(camera.matrixWorld);
       sdfRaymarchMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+      sdfRaymarchMaterial.uniformsNeedUpdate = true;
 
       // Render Raymarched Skin into Low-Res Target
       renderer.setRenderTarget(sdfRenderTarget);
@@ -1615,6 +1527,11 @@
       pGeometry.attributes.position.needsUpdate = true;
 
       // -----------------------------------------------------------------------
+      // Step D.2: Update 3D Holographic Interface (Zero Heap Allocations)
+      // -----------------------------------------------------------------------
+      hologramManager.update(time, dt);
+
+      // -----------------------------------------------------------------------
       // Step E: Post-Processing & Final Cinematic Composite
       // -----------------------------------------------------------------------
       finalPass.uniforms.uTime.value = time;
@@ -1649,12 +1566,9 @@
     // Start animation loop immediately
     requestAnimationFrame(animate);
 
-    // Flag for test automation and readiness
-    window.__symbioteReady = true;
-
-    // Bootstrap camera & MediaPipe asynchronously
+    // Bootstrap camera & MediaPipe asynchronously (readiness flags set upon completion)
     initMediaPipeAndCamera().catch((err) => {
-      console.warn('[SYMBIOTE] Background init error:', err);
+      console.warn('[PROJECT NEXUS] Background init unhandled error:', err);
     });
   </script>
 </body>
