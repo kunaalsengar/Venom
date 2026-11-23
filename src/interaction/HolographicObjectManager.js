@@ -21,11 +21,13 @@ import { InteractableHologram } from '../hologram/InteractableHologram.js';
 import { AppConfig } from '../config/AppConfig.js';
 import { eventBus, Events } from '../core/EventBus.js';
 import { stateManager } from '../core/StateManager.js';
-import { dist3 } from '../utils/MathUtils.js';
+import { dist3, clamp } from '../utils/MathUtils.js';
 
 export class HolographicObjectManager {
   constructor() {
     this._cfg = AppConfig.interaction.objects;
+    this._manipCfg = AppConfig.interaction?.manipulation?.twoHand;
+    this._twoHandCfg = AppConfig.interaction?.twoHand;
 
     /** @type {Map<string, InteractableHologram>} */
     this._objects = new Map();
@@ -49,6 +51,15 @@ export class HolographicObjectManager {
         lastActionTimestamp: 0
       }
     };
+
+    // Preallocated two-hand manipulation session state (zero heap allocations in 60 FPS loop)
+    this._twoHandSession = {
+      active: false,
+      objectId: null,
+      baselineDistance: 0.0,
+      baselineScale: 1.0,
+      isTrackingValid: false
+    };
   }
 
   /**
@@ -65,6 +76,14 @@ export class HolographicObjectManager {
    */
   get count() {
     return this._objects.size;
+  }
+
+  /**
+   * Active two-hand manipulation session state accessor
+   * @returns {typeof this._twoHandSession}
+   */
+  get twoHandSession() {
+    return this._twoHandSession;
   }
 
   /**
@@ -207,8 +226,9 @@ export class HolographicObjectManager {
 
     const time = currentTimeMs * 0.001;
 
-    // 1. Process interactions independently for each hand
+    // 1. Process two-hand manipulation and independent hand interactions
     if (controllers) {
+      this._updateTwoHandZoom(controllers, dt, currentTimeMs);
       this._processHandInteraction('left', controllers.left, dt, currentTimeMs);
       this._processHandInteraction('right', controllers.right, dt, currentTimeMs);
     }
@@ -227,6 +247,153 @@ export class HolographicObjectManager {
   }
 
   /**
+   * Evaluate two-hand distance-based zoom on selected interactable holographic object
+   * @private
+   * @param {{ left: import('./HandController.js').HandController, right: import('./HandController.js').HandController }} controllers
+   * @param {number} dt
+   * @param {number} currentTimeMs
+   */
+  _updateTwoHandZoom(controllers, dt, currentTimeMs) {
+    if (!this._manipCfg || !this._manipCfg.enabled || !this._manipCfg.zoomEnabled) {
+      if (this._twoHandSession.active) {
+        this._endTwoHandSession();
+      }
+      return;
+    }
+
+    const leftCtrl = controllers?.left;
+    const rightCtrl = controllers?.right;
+
+    const leftDetected = Boolean(leftCtrl && leftCtrl.detected);
+    const rightDetected = Boolean(rightCtrl && rightCtrl.detected);
+    const bothDetected = leftDetected && rightDetected;
+
+    const leftPinching = Boolean(leftCtrl && leftCtrl.isPinching);
+    const rightPinching = Boolean(rightCtrl && rightCtrl.isPinching);
+    const bothPinching = bothDetected && leftPinching && rightPinching;
+
+    // 1. If session is already active, manage continuity, tracking-loss, reacquisition, and zoom calculation
+    if (this._twoHandSession.active) {
+      const targetObj = this._objects.get(this._twoHandSession.objectId);
+
+      // Verify the object still exists and at least one hand holds selection ownership
+      const hasSelection = Boolean(this._handState.left.selectedId || this._handState.right.selectedId);
+      if (!targetObj || !hasSelection) {
+        this._endTwoHandSession();
+        return;
+      }
+
+      // If neither hand is pinching, terminate two-hand session
+      if (!leftPinching && !rightPinching) {
+        this._endTwoHandSession();
+        return;
+      }
+
+      // If one hand released pinch while both hands are detected, session naturally concludes
+      // (The still-pinching hand resumes standard single-hand interaction smoothly)
+      if (bothDetected && (!leftPinching || !rightPinching)) {
+        this._endTwoHandSession();
+        return;
+      }
+
+      // Handle Tracking Loss: If either hand momentarily loses tracking, pause zoom without resetting scale
+      if (!bothDetected) {
+        this._twoHandSession.isTrackingValid = false;
+        return;
+      }
+
+      const minSpan = (this._twoHandCfg && this._twoHandCfg.minSpanDistance) || 0.08;
+      const currentDist = Math.max(minSpan, dist3(leftCtrl.position, rightCtrl.position));
+
+      // Handle Reacquisition: If both hands were just reacquired after tracking loss, re-anchor baseline
+      if (!this._twoHandSession.isTrackingValid) {
+        this._twoHandSession.baselineDistance = currentDist;
+        this._twoHandSession.baselineScale = targetObj.userScale;
+        this._twoHandSession.isTrackingValid = true;
+        return;
+      }
+
+      // Continuous Distance-Based Zoom with Baseline-Relative Deadband Filtering
+      const d0 = this._twoHandSession.baselineDistance;
+      const s0 = this._twoHandSession.baselineScale;
+      if (d0 <= 0.0001) return;
+
+      const deltaD = currentDist - d0;
+      const deadband = (this._manipCfg && this._manipCfg.zoomDeadband) || 0.035;
+      const threshold = d0 * deadband;
+
+      let effectiveDelta = 0.0;
+      if (Math.abs(deltaD) > threshold) {
+        effectiveDelta = deltaD - Math.sign(deltaD) * threshold;
+      }
+
+      const sensitivity = (this._manipCfg && this._manipCfg.zoomSensitivity) || 1.20;
+      const minScale = (this._manipCfg && this._manipCfg.minScale) || 0.40;
+      const maxScale = (this._manipCfg && this._manipCfg.maxScale) || 2.80;
+
+      const scaleRatio = 1.0 + (effectiveDelta / d0) * sensitivity;
+      const targetScale = clamp(s0 * scaleRatio, minScale, maxScale);
+
+      // Apply target user scale (InteractableHologram.update will exponentially smooth userScale)
+      targetObj.setUserScale(targetScale);
+      return;
+    }
+
+    // 2. Evaluate Two-Hand Engagement Conditions for a new session
+    if (!bothPinching) return;
+
+    const leftSel = this._handState.left.selectedId;
+    const rightSel = this._handState.right.selectedId;
+
+    // Reject engagement if there is a conflict (each hand holds a DIFFERENT object)
+    if (leftSel && rightSel && leftSel !== rightSel) {
+      return;
+    }
+
+    const targetId = leftSel || rightSel;
+    if (!targetId) return;
+
+    const targetObj = this._objects.get(targetId);
+    if (!targetObj) return;
+
+    // Latch baseline parameters at engagement moment
+    const minSpan = (this._twoHandCfg && this._twoHandCfg.minSpanDistance) || 0.08;
+    const currentDist = Math.max(minSpan, dist3(leftCtrl.position, rightCtrl.position));
+
+    this._twoHandSession.active = true;
+    this._twoHandSession.objectId = targetId;
+    this._twoHandSession.baselineDistance = currentDist;
+    this._twoHandSession.baselineScale = targetObj.userScale;
+    this._twoHandSession.isTrackingValid = true;
+  }
+
+  /**
+   * Terminate active two-hand manipulation session
+   * @private
+   */
+  _endTwoHandSession() {
+    this._twoHandSession.active = false;
+    this._twoHandSession.objectId = null;
+    this._twoHandSession.baselineDistance = 0.0;
+    this._twoHandSession.baselineScale = 1.0;
+    this._twoHandSession.isTrackingValid = false;
+  }
+
+  /**
+   * Check whether an active two-hand zoom session owns the given object
+   * @private
+   * @param {string} objectId
+   * @returns {boolean}
+   */
+  _isTwoHandZoomActiveFor(objectId) {
+    return Boolean(
+      this._twoHandSession.active &&
+      this._twoHandSession.isTrackingValid &&
+      this._twoHandSession.objectId === objectId
+    );
+  }
+
+  /**
    * Evaluate proximity hit-testing, selection, drag, and activation for one hand
    * @private
    * @param {'left'|'right'} side
@@ -238,11 +405,13 @@ export class HolographicObjectManager {
     const hState = this._handState[side];
 
     if (!controller || !controller.detected) {
-      // If hand lost tracking, cleanly release any held selection & clear hover
-      if (hState.selectedId) {
+      // If hand lost tracking, cleanly release any held selection & clear hover,
+      // unless an active two-hand session is currently active on this object (in which case zoom pauses)
+      const isTwoHandLocked = this._twoHandSession.active && this._twoHandSession.objectId === hState.selectedId;
+      if (hState.selectedId && !isTwoHandLocked) {
         this._releaseSelection(side, hState.selectedId);
       }
-      if (hState.hoveredId) {
+      if (hState.hoveredId && !isTwoHandLocked) {
         this._clearHover(side, hState.hoveredId);
       }
       hState.wasPinching = false;
@@ -260,8 +429,10 @@ export class HolographicObjectManager {
       const selectedObj = this._objects.get(hState.selectedId);
       if (selectedObj && selectedObj.selectingHand === side) {
         if (isPinching) {
-          // Drag object to match controller movement
-          selectedObj.dragTo(cPos, dt);
+          // Suppress single-hand drag translation if active two-hand zoom is engaged on this object
+          if (!this._isTwoHandZoomActiveFor(hState.selectedId)) {
+            selectedObj.dragTo(cPos, dt);
+          }
         } else {
           // Pinch ended -> naturally release selection
           this._releaseSelection(side, hState.selectedId);
@@ -283,6 +454,10 @@ export class HolographicObjectManager {
     if (hState.selectedId) {
       // While dragging an active selection, maintain focus on the selected object
       closestObj = this._objects.get(hState.selectedId);
+      minDistance = closestObj ? dist3(cPos, closestObj.position) : 0;
+    } else if (this._twoHandSession.active && this._twoHandSession.objectId) {
+      // While participating in active two-hand manipulation, lock focus to the manipulated object
+      closestObj = this._objects.get(this._twoHandSession.objectId);
       minDistance = closestObj ? dist3(cPos, closestObj.position) : 0;
     } else {
       for (const obj of this._objects.values()) {
@@ -323,7 +498,7 @@ export class HolographicObjectManager {
       // C. PINCH SELECTION TRIGGER
       // -------------------------------------------------------------------------
       const pinchStarted = isPinching && !hState.wasPinching;
-      if (pinchStarted && !hState.selectedId) {
+      if (pinchStarted && !hState.selectedId && !this._twoHandSession.active) {
         // Deterministic arbitration: can only select if not already held by the other hand
         if (!closestObj.selectingHand) {
           hState.selectedId = nextHoveredId;
@@ -338,8 +513,8 @@ export class HolographicObjectManager {
       }
 
       // Check for gestural action activation while hovering (e.g. FIST or SPREAD)
-      // Only evaluate when NOT pinching to prevent race conditions during pinch-selection
-      if (!isPinching && (gesture === 'FIST' || gesture === 'SPREAD') &&
+      // Only evaluate when NOT pinching and NOT in two-hand manipulation session
+      if (!this._twoHandSession.active && !isPinching && (gesture === 'FIST' || gesture === 'SPREAD') &&
           currentTimeMs - hState.lastActionTimestamp > (this._cfg.actionCooldownMs || 250)) {
         hState.lastActionTimestamp = currentTimeMs;
         closestObj.activate(side, gesture, currentTimeMs);
@@ -384,12 +559,18 @@ export class HolographicObjectManager {
     this._handState[side].selectedId = null;
     stateManager.setHologramObjectSelected(side, null);
     eventBus.emit(Events.HOLOGRAM_OBJECT_RELEASED, { id: objectId, hand: side });
+
+    // If this object was engaged in two-hand manipulation, end session cleanly
+    if (this._twoHandSession.active && this._twoHandSession.objectId === objectId) {
+      this._endTwoHandSession();
+    }
   }
 
   /**
    * Reset all interactable objects to their default positions
    */
   resetAllPositions() {
+    this._endTwoHandSession();
     for (const obj of this._objects.values()) {
       obj.resetPosition();
     }
@@ -399,6 +580,7 @@ export class HolographicObjectManager {
    * Clean up all objects
    */
   dispose() {
+    this._endTwoHandSession();
     for (const id of this._objects.keys()) {
       this.unregister(id);
     }
