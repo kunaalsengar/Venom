@@ -331,6 +331,8 @@ export const AppConfig = Object.freeze({
         rotationDeadbandDeg: 3.0,
         rotationSmoothing: 16.0,
         twoHandDragSmoothing: 24.0,
+        trackingLossGraceMs: 150,
+        pinchReleaseDebounceFrames: 2,
         mouseFallbackZoomEnabled: true
       })
     }),
@@ -351,12 +353,65 @@ export const AppConfig = Object.freeze({
   }),
 
   /**
-   * Accent Droplets / Particle System Parameters
+   * GPU Particle Engine Parameters (Phase 5, Step 5.1)
    */
   particles: Object.freeze({
-    count: 3000,                 // 3,000 fluid droplet particles
+    enabled: true,
+    count: 3000,                 // Baseline active particle count
+    maxCount: 15000,             // Maximum allocated GPU buffer capacity
     baseSize: 11.0,              // Point size multiplier
-    anchorLandmarks: Object.freeze([4, 8, 12, 16, 20, 0, 5, 9, 17])
+    minSize: 0.5,
+    maxSize: 1.4,
+    speed: 1.0,
+    opacity: 0.92,
+    simulationMode: 'gpu',       // 'gpu' (vertex shader simulation) | 'manual'
+    colors: Object.freeze({
+      base: 0x050a14,            // Deep cosmic cyan/navy base
+      specular: 0xf0f8ff,        // Brilliant specular glint
+      rim: 0x00f0ff,             // Luminous electric cyan rim
+      accent: 0xa855f7           // Holographic purple / violet accent
+    }),
+    lighting: Object.freeze({
+      direction: [-0.45, 0.75, 0.48]
+    }),
+    rendering: Object.freeze({
+      blending: 'normal',
+      depthWrite: false,
+      transparent: true,
+      renderOrder: 2
+    }),
+    qualityPresets: Object.freeze({
+      low: 1500,
+      medium: 3000,
+      high: 6000,
+      ultra: 12000
+    }),
+    anchorLandmarks: Object.freeze([4, 8, 12, 16, 20, 0, 5, 9, 17]),
+    forceField: Object.freeze({
+      enabled: true,
+      defaultMode: 'attract',     // 'attract' | 'repel' | 'none'
+      attractStrength: 1.20,      // Attraction pull strength multiplier
+      repelStrength: 1.50,        // Repulsion push strength multiplier
+      radius: 2.20,               // Influence radius in 3D world units
+      falloff: 2.0,               // Distance falloff exponent (quadratic falloff)
+      maxDisplacement: 2.50,      // Clamp ceiling for maximum vertex displacement
+      smoothing: 12.0             // Exponential smoothing rate (1.0 - exp(-12.0 * dt))
+    }),
+    handInteraction: Object.freeze({
+      enabled: true,
+      leftMode: 'repel',          // Default force mode for left hand ('attract' | 'repel' | 'none')
+      rightMode: 'attract',       // Default force mode for right hand ('attract' | 'repel' | 'none')
+      singleHandMode: null,       // Optional mode override when exactly one hand is tracked (null preserves hand's mode)
+      radius: 2.20,               // Hand force-field influence radius in 3D world units
+      attractStrength: 1.20,      // Attraction pull strength multiplier for hands
+      repelStrength: 1.50,        // Repulsion push strength multiplier for hands
+      falloff: 2.0,               // Distance falloff exponent (quadratic falloff)
+      maxDisplacement: 2.50,      // Maximum vertex displacement cap
+      smoothing: 18.0,            // Positional & parameter exponential lerp rate
+      trackingLossGraceMs: 150,   // Grace period before fading out influence on tracking loss
+      fadeSpeed: 10.0,            // Exponential weight fade-out rate after grace period expires
+      anchorPoint: 'position'     // Anchor point preference: 'position' | 'palm' | 'indexTip'
+    })
   }),
 
   /**

@@ -2,7 +2,7 @@
 **Project:** PROJECT NEXUS — Browser-Based Spatial 3D Gesture Experience  
 **Total Phases:** 8 Phases  
 **Total Steps:** 32 Steps (4 Steps per Phase)  
-**Current Milestone:** Phase 4, Step 4.3 Implementation Complete (Manual Verification Pending)  
+**Current Milestone:** Phase 5, Step 5.2 Implementation Complete (Manual Verification Pending)  
 
 ---
 
@@ -12,8 +12,8 @@
 Phase 1: Project Foundation & Architecture  ────────► [COMPLETED] (Steps 1.1-1.4: All Completed)
 Phase 2: Webcam & Hand Tracking System      ────────► [COMPLETED] (Steps 2.1-2.4: Implementation Completed)
 Phase 3: Gesture Recognition Engine         ────────► [COMPLETED / IN PROGRESS] (Steps 3.1-3.3 Implemented; Step 3.4 Pending)
-Phase 4: 3D Holographic Interface           ────────► [IN PROGRESS] (Steps 4.1-4.3 Implemented; Step 4.4 Pending)
-Phase 5: Particle Physics & Interaction     ────────► [PENDING]
+Phase 4: 3D Holographic Interface           ────────► [IN PROGRESS] (Steps 4.1-4.4 Implemented; Manual Verification Pending)
+Phase 5: Particle Physics & Interaction     ────────► [IN PROGRESS] (Steps 5.1-5.2 Implemented; Steps 5.3-5.4 Pending)
 Phase 6: Superpower & Visual Effects Engine ────────► [PENDING]
 Phase 7: Advanced JARVIS Features           ────────► [PENDING]
 Phase 8: Optimization, Quality & Release    ────────► [PENDING]
@@ -325,56 +325,104 @@ Phase 8: Optimization, Quality & Release    ────────► [PENDING
   - Kinetic action activation on supported gestures (e.g. Fist / Spread) triggering scale burst, emerald pulse, and notification dispatch.
   - 60 FPS performance maintained with zero garbage collection allocations.
 
-### Step 4.4: Spatial Raycasting, Hit-Testing & Hover/Select Feedback
-- **Status:** **[PENDING]**
+### Step 4.4: Spatial Interaction & Object Manipulation (Two-Hand RST Manipulation)
+- **Status:** **[IN PROGRESS]** *(Stage 1, Stage 2, Stage 3, and Stage 4 Implemented — Manual verification pending by user)*
 - **Objectives:**
-  - Wire index fingertip position and pinch focal point into 3D raycasting against holographic widgets.
-  - Implement visual states: Idle (dim/faint), Hovered (bright/pulse), Selected/Engaged (color shift + audio chime).
-  - Implement pinch-and-drag manipulation to rotate dials and translate holographic panels.
+  - Implement full dual-hand Rotate-Scale-Translate (RST) spatial manipulation for interactable 3D holographic objects.
+  - **Stage 1 (Foundation & Persistent Transforms):** Persistent `userScale` and `userRotation` channels decoupled from discrete state-machine scale, zero-allocation transform setters (`setUserScale`, `setUserRotation`, `resetUserTransforms`), and root reorientation preserving inner mesh ambient counter-rotations. *(Implemented)*
+  - **Stage 2 (Two-Hand Distance Zoom Engine):** Dual-hand active pinch session engagement, baseline distance latching ($d_0, s_0$), relative distance deadband ($3.5\%$) filtering hand tremor, continuous smooth scaling within $[0.40, 2.80]$, tracking-loss suspension and seamless reacquisition re-anchoring, with single-hand drag gating. *(Implemented)*
+  - **Stage 3 (Two-Hand Rotation Engine):** Coronal planar steering-wheel rotation from dual-hand angle $\Delta \theta = \text{atan2}(\Delta Y, \Delta X)$, branch-cut wrap normalization across $[-\pi, +\pi]$ boundary, $3.0^\circ$ deadband filtering, sensitivity scaling ($1.10\times$), concurrent zoom/rotation execution, tracking-loss pause, and seamless baseline re-anchoring without snap-backs. *(Implemented)*
+  - **Stage 4 (Coordinated Two-Hand Translation Engine & Stalling Surgical Fix):** Bilateral 3D midpoint translation ($\mathbf{P}_{\text{mid}} = (\mathbf{P}_{\text{left}} + \mathbf{P}_{\text{right}}) / 2$), displacement tracking relative to engagement baseline ($\mathbf{P}_{\text{obj0}} + (\mathbf{P}_{\text{mid}} - \mathbf{P}_{\text{mid0}})$), full $X, Y, Z$ depth motion, `twoHandDragSmoothing` (24.0) exponential decay, continuous drag offset synchronization preventing single-hand handoff snaps, decoupled exclusive session ownership (`_isTwoHandManipulatingObject`), 150ms tracking-loss grace window, safe exactly-once reacquisition baseline re-anchoring, and 2-frame pinch release debouncing with clean single-hand handoff. *(Implemented — Manual verification pending)*
+  - **Stage 5 (Telemetry & Spatial Refinement):** Live manipulation telemetry in HUD and debug consoles. *(Pending)*
 - **Deliverables:**
-  - Interaction logic in `src/ui/HologramSystem.js` and `src/gestures/GestureEventManager.js`
+  - `src/interaction/HolographicObjectManager.js` (Two-hand manipulation session manager, distance zoom, planar rotation, and coordinated midpoint translation engines)
+  - `src/hologram/InteractableHologram.js` (Persistent transform channels and multi-rate interpolation)
+  - `src/config/AppConfig.js` (`interaction.manipulation.twoHand` configuration block)
 - **Verification Criteria:**
-  - Natural, tactile 3D touch interaction with clear hover and grab feedback.
+  - Full simultaneous Rotate-Scale-Translate (RST) interaction on selected holographic objects with zero cross-axis interference.
+  - Midpoint displacement smoothly carries the object in 3D ($X, Y, Z$) with natural depth responsiveness.
+  - Releasing one hand seamlessly hands off translation to single-hand drag without position jumping.
+  - Releasing both pinches cleanly preserves final 3D position, user scale, and orientation.
+  - Momentary tracking loss pauses all manipulation; reacquisition resumes smoothly with zero jerking.
 
 ---
 
 ## Phase 5: Particle Physics & Interaction
 
 ### Step 5.1: GPU Buffer-Geometry Particle Engine Architecture
-- **Status:** **[PENDING]**
+- **Status:** **[IMPLEMENTED]** *(Manual verification pending by user)*
 - **Objectives:**
-  - Implement `src/particles/ParticleEngine.js` managing high-density particle clouds ($10,000+$ particles).
-  - Utilize `THREE.BufferGeometry` with attributes: `position`, `velocity`, `phase`, `size`, `color`.
-  - Implement custom vertex and fragment shaders for particle rendering with perspective attenuation.
+  - Establish a high-performance GPU buffer-geometry particle engine (`src/particles/ParticleEngine.js`) scaling up to 15,000 particles.
+  - Utilize `THREE.BufferGeometry` with custom typed planar attributes: `position`, `aVelocity`, `aPhase`, `aSize`, `aColor`, and `aLifetime` (reserved for future lifecycle/fading features).
+  - Implement custom GLSL vertex shader (`src/shaders/vfx/particle.vert`) supporting perspective point size attenuation, depth clamping ($1.0$ to $128.0$ px), and autonomous GPU procedural harmonic orbital displacement (`uGpuMotion`).
+  - Implement custom GLSL fragment shader (`src/shaders/vfx/particle.frag`) computing liquid spherical droplet surface normals ($\sqrt{1 - r^2}$), specular glints (power 32.0), Fresnel rim glow (power 3.2), and mathematically valid edge anti-aliasing (`1.0 - smoothstep(0.80, 1.0, r2)`).
+  - Implement `src/particles/ParticleShaders.js` encapsulating custom `THREE.ShaderMaterial` with `THREE.AdditiveBlending` and uniform bindings (`uTime`, `uBaseSize`, `uDpr`, `uSpeed`, `uGpuMotion`, `uOpacity`, `uLightDir`, `uBaseColor`, `uSpecularColor`, `uRimColor`).
+  - Provide dynamic particle count scaling via `geometry.setDrawRange(0, count)` with zero garbage collection allocations.
+  - Explicitly bypass CPU frustum culling (`points.frustumCulled = false`) to account for procedural GPU vertex displacement and point-sprite attenuation where static CPU geometry bounds are unsuitable.
+  - Support configurable quality presets (`low`: 1,500, `medium`: 3,000, `high`: 8,000, `ultra`: 15,000) synced with `AppConfig`, `StateManager`, and bidirectional `EventBus` command listeners.
+  - Maintain strict separation of concerns: hand attractors and gesture dynamics are decoupled and deferred to Steps 5.3 and 5.4.
 - **Deliverables:**
-  - `src/particles/ParticleEngine.js`
-  - `src/shaders/vfx/particle.vert`
-  - `src/shaders/vfx/particle.frag`
+  - `src/particles/ParticleEngine.js` (Singleton GPU particle engine controller)
+  - `src/particles/ParticleShaders.js` (ShaderMaterial factory, additive blending, and uniform definitions)
+  - `src/shaders/vfx/particle.vert` (GLSL vertex shader with perspective attenuation and orbital displacement)
+  - `src/shaders/vfx/particle.frag` (GLSL fragment shader with liquid droplet normal, specular glint, and Fresnel rim)
+  - Updated `src/config/AppConfig.js` (`particles` configuration block)
+  - Updated `src/core/EventBus.js` (`PARTICLE_VISIBILITY`, `PARTICLE_COUNT`, `PARTICLE_QUALITY`)
+  - Updated `src/core/StateManager.js` (`rendering.particles` state and helper methods)
+  - Updated `index.html` (Replaced inline CPU loop with `ParticleEngine` lifecycle while preserving backward-compatible aliases)
 - **Verification Criteria:**
-  - 10,000+ particles rendering smoothly at 60 FPS on laptop GPUs.
+  - 15,000 capacity allocated upfront with smooth 60 FPS procedural GPU rendering.
+  - Custom GLSL point shader correctly attenuates point sizes with perspective and renders spherical liquid droplets with specular highlights, rim glow, and additive blending.
+  - Dynamic count adjustment modifies draw range in $O(1)$ without re-allocating GPU buffers.
+  - StateManager and EventBus bidirectionally control visibility, density, and quality presets without event recursion.
+  - Global debug reference `window.particleEngine` accessible from browser console.
 
-### Step 5.2: Simplex & Curl Noise Force Fields
-- **Status:** **[PENDING]**
+### Step 5.2: Particle Attraction and Repulsion
+- **Status:** **[IMPLEMENTED]** *(Manual verification pending by user)*
 - **Objectives:**
-  - Implement `src/particles/ForceFields.js` providing procedural 3D divergence-free curl noise and simplex turbulence.
-  - Compute organic fluid velocity vectors in real time without external texture assets.
-  - Apply physical parameters: inertia damping, fluid drag, and turbulence scaling.
+  - Implement configurable GPU-side attraction and repulsion force fields in the vertex shader (`src/shaders/vfx/particle.vert` and `src/particles/ParticleShaders.js`).
+  - Support continuous distance falloff ($f = (1 - d/R)^{\text{falloff}}$), soft core center stability, and maximum displacement caps.
+  - Implement smooth temporal transitions ($\alpha = 1 - e^{-\lambda dt}$) on activation, deactivation, and parameter updates to prevent abrupt particle snaps.
+  - Expose clean control and inspection APIs on `ParticleEngine` (`setAttractor`, `setRepulsor`, `setForceField`, `updateForceField`, `clearForceField`, `getForceFieldState`).
+  - Integrate with `AppConfig.particles.forceField`, `StateManager.state.rendering.particles.forceField`, and `EventBus` (`PARTICLE_FORCE_FIELD`).
 - **Deliverables:**
-  - `src/particles/ForceFields.js`
-  - `src/utils/Noise.js`
+  - Updated `src/particles/ParticleEngine.js` (Force field API, zero-allocation temporal lerp, StateManager & EventBus integration)
+  - Updated `src/particles/ParticleShaders.js` (Force field uniforms and GLSL integration)
+  - Updated `src/shaders/vfx/particle.vert` (GLSL force-field displacement function)
+  - Updated `src/config/AppConfig.js` (`particles.forceField` configuration block)
+  - Updated `src/core/EventBus.js` (`PARTICLE_FORCE_FIELD` event)
+  - Updated `src/core/StateManager.js` (`rendering.particles.forceField` state)
 - **Verification Criteria:**
-  - Particles drift and undulate with natural, non-repeating fluid turbulence.
+  - Attraction pulls particles toward the interaction point within configured radius with smooth falloff.
+  - Repulsion pushes particles away from the interaction point without center instability or division-by-zero.
+  - Particles outside the influence radius remain 100% unaffected.
+  - Autonomous orbital motion resumes smoothly when force field is cleared.
+  - Transitions activate and disengage without abrupt particle snapping.
 
-### Step 5.3: Hand Landmark Particle Attractors & Repulsors
-- **Status:** **[PENDING]**
+### Step 5.3: Hand-Controlled Particle Movement (Attractors & Repulsors)
+- **Status:** **[IMPLEMENTED]** *(Manual verification pending by user)*
 - **Objectives:**
-  - Link particle spring forces to smoothed 3D hand landmarks (fingertips, palm centers, wrist).
-  - Implement magnetic attraction fields drawing particles toward active hands.
-  - Implement repulsion shockwaves when hands push forward or move rapidly.
+  - Connect processed 3D hand coordinates (from `LandmarkProcessor` and `InteractionEngine` controllers) directly to the GPU particle force-field engine (`ParticleEngine`).
+  - Implement Single-Hand Interaction: Drive particle force-field center from the active hand with configurable attraction/repulsion modes, anchor point selection (`position`, `palm`, `indexTip`), and exponential smoothing ($\alpha = 1 - e^{-\lambda dt}$).
+  - Implement Two-Hand Interaction: Support independent left and right hand influence fields simultaneously in the custom GLSL vertex shader (`particle.vert` and `ParticleShaders.js`) without silent overwriting or thread collisions (`uForce*` and `uForce2*`), vectorially combining displacements and capping net displacement safely.
+  - Implement Tracking Loss Grace & Reacquisition: 150ms grace window holding field state through momentary tracking jitter; exponential fade-out to zero on persistent loss ($\lambda = 10.0$); immediate positional snapping upon reacquisition if faded, completely eliminating across-screen sweeps.
+  - Configure dedicated parameters in `AppConfig.particles.handInteraction` (`leftMode: 'repel'`, `rightMode: 'attract'`, `singleHandMode`, `radius: 2.20`, `attractStrength: 1.20`, `repelStrength: 1.50`, `trackingLossGraceMs: 150`, `fadeSpeed: 10.0`, `smoothing: 18.0`).
+  - Expose clean runtime control and inspection APIs on `ParticleEngine` (`updateHandInteraction`, `setHandMode`, `setHandForceField`, `setHandInteractionEnabled`, `isHandInteractionEnabled`, `getHandForceState`).
+  - Integrate bidirectional state synchronization with `StateManager.state.rendering.particles.handInteraction` and `EventBus` (`PARTICLE_HAND_INTERACTION`) preventing event feedback recursion.
+  - Wire per-frame updates directly into `index.html` main 60 FPS animation loop with zero heap allocations.
 - **Deliverables:**
-  - Landmark binding in `src/particles/ParticleEngine.js`
+  - Updated `src/particles/ParticleEngine.js` (Hand tracking coordinator, grace window, reacquisition snapping, dual-hand shader uniform updates, and clean inspection APIs)
+  - Updated `src/shaders/vfx/particle.vert` & `src/particles/ParticleShaders.js` (Dual-hand force field GLSL programs with bounded vector accumulation)
+  - Updated `src/config/AppConfig.js` (`particles.handInteraction` configuration block)
+  - Updated `src/core/StateManager.js` (`rendering.particles.handInteraction` state and `updateParticleHand` helper)
+  - Updated `src/core/EventBus.js` (`PARTICLE_HAND_INTERACTION` event constant)
+  - Updated `index.html` (Integrated `updateHandInteraction` into main 60 FPS loop)
 - **Verification Criteria:**
-  - Particles dynamically cling, swirl, and follow hand movements in 3D space with elastic spring physics.
+  - Right hand attracts particles dynamically in 3D world space while left hand repels particles simultaneously with zero interference or uniform overwriting.
+  - Displacements fall off quadratically with distance and preserve autonomous GPU orbital flow for particles outside the influence radius.
+  - Momentary hand occlusion (<150ms) retains continuous particle attraction without flickering; prolonged loss smoothly fades influence to zero.
+  - Re-entering the camera frame smoothly re-anchors to current hand position without dragging particles across the screen.
+  - 60 FPS rendering maintained with zero garbage collection allocations in the primary animation loop.
 
 ### Step 5.4: Gesture-Driven Particle Dynamics & Velocity Stretch
 - **Status:** **[PENDING]**

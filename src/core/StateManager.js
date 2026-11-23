@@ -228,6 +228,34 @@ export class StateManager {
           opacity: AppConfig.hologram.opacity,
           quality: 'high',
           activeComponents: ['grid', 'rings', 'core']
+        },
+        // GPU Particle Engine State (Phase 5, Steps 5.1, 5.2 & 5.3)
+        particles: {
+          visible: AppConfig.particles?.enabled !== false,
+          count: AppConfig.particles?.count || 3000,
+          quality: 'medium',
+          mode: AppConfig.particles?.simulationMode || 'gpu',
+          forceField: {
+            mode: 'none',
+            active: false,
+            radius: AppConfig.particles?.forceField?.radius || 2.20,
+            strength: 0.0
+          },
+          handInteraction: {
+            enabled: AppConfig.particles?.handInteraction?.enabled !== false,
+            left: {
+              active: false,
+              mode: AppConfig.particles?.handInteraction?.leftMode || 'repel',
+              radius: AppConfig.particles?.handInteraction?.radius || 2.20,
+              strength: 0.0
+            },
+            right: {
+              active: false,
+              mode: AppConfig.particles?.handInteraction?.rightMode || 'attract',
+              radius: AppConfig.particles?.handInteraction?.radius || 2.20,
+              strength: 0.0
+            }
+          }
         }
       },
 
@@ -807,6 +835,39 @@ export class StateManager {
   }
 
   /**
+   * Set particle system visibility and emit PARTICLE_VISIBILITY (Phase 5, Step 5.1)
+   * @param {boolean} visible
+   */
+  setParticleVisibility(visible) {
+    const isVis = Boolean(visible);
+    if (this.state.rendering.particles.visible === isVis) return;
+    this.state.rendering.particles.visible = isVis;
+    eventBus.emit(Events.PARTICLE_VISIBILITY, { visible: isVis });
+  }
+
+  /**
+   * Set particle count and emit PARTICLE_COUNT (Phase 5, Step 5.1)
+   * @param {number} count
+   */
+  setParticleCount(count) {
+    const safeCount = Math.max(10, Math.round(count));
+    if (this.state.rendering.particles.count === safeCount) return;
+    this.state.rendering.particles.count = safeCount;
+    this.state.rendering.particleCount = safeCount;
+    eventBus.emit(Events.PARTICLE_COUNT, { count: safeCount });
+  }
+
+  /**
+   * Set particle quality level and emit PARTICLE_QUALITY (Phase 5, Step 5.1)
+   * @param {'low'|'medium'|'high'|'ultra'} quality
+   */
+  setParticleQuality(quality) {
+    if (this.state.rendering.particles.quality === quality) return;
+    this.state.rendering.particles.quality = quality;
+    eventBus.emit(Events.PARTICLE_QUALITY, { quality });
+  }
+
+  /**
    * Update 3D interaction controller state for a specific hand (Phase 4, Step 4.2)
    * @param {'left'|'right'} side
    * @param {Object} data
@@ -884,6 +945,20 @@ export class StateManager {
       ho.items[objectId] = { id: objectId, state: 'IDLE', hoveringHand: null, selectingHand: null };
     }
     Object.assign(ho.items[objectId], itemData);
+  }
+
+  /**
+   * Update particle hand interaction state (Phase 5, Step 5.3)
+   * @param {'left'|'right'} side
+   * @param {Object} data
+   */
+  updateParticleHand(side, data = {}) {
+    const pHand = this.state.rendering?.particles?.handInteraction?.[side];
+    if (!pHand) return;
+    if (data.active !== undefined) pHand.active = data.active;
+    if (data.mode !== undefined) pHand.mode = data.mode;
+    if (data.radius !== undefined) pHand.radius = data.radius;
+    if (data.strength !== undefined) pHand.strength = data.strength;
   }
 
   /**

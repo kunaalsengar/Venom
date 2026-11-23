@@ -65,6 +65,13 @@ export const Events = Object.freeze({
   HOLOGRAM_OBJECT_RELEASED: 'hologram:object_released',
   HOLOGRAM_OBJECT_ACTIVATED: 'hologram:object_activated',
 
+  // GPU Particle Engine Events (Phase 5, Steps 5.1, 5.2 & 5.3)
+  PARTICLE_VISIBILITY: 'particle:visibility',
+  PARTICLE_COUNT: 'particle:count',
+  PARTICLE_QUALITY: 'particle:quality',
+  PARTICLE_FORCE_FIELD: 'particle:force_field',
+  PARTICLE_HAND_INTERACTION: 'particle:hand_interaction',
+
   // Performance & System Events
   FPS_UPDATE: 'perf:fps_update',
   RES_SCALE_CHANGE: 'rendering:res_scale_change',

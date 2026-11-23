@@ -1,6 +1,6 @@
 # PROJECT NEXUS — SYSTEM ARCHITECTURE BLUEPRINT
-**Document Version:** 1.9.0  
-**Phase & Step:** Phase 4, Step 4.3 (Gesture-Controlled Holographic Objects — Implemented)  
+**Document Version:** 1.11.0  
+**Phase & Step:** Phase 5, Step 5.2 (Particle Attraction and Repulsion — Implemented, Manual Verification Pending)  
 **Classification:** Technical Architecture Specification  
 **Target Platform:** Modern Web Browsers (Chrome, Edge, Safari, Firefox) via WebGL 2, Three.js, MediaPipe Tasks Vision
 
@@ -360,6 +360,93 @@ Step 4.3 establishes spatial object interaction driven by dual-hand kinematics:
    - **SELECTED:** $1.18\times$ scale lock, luminous sky blue highlight (`0x38bdf8`), firm bracket alignment, 3D drag enabled.
    - **ACTIVATED:** $1.35\times$ scale burst, spin boost, luminous emerald flash (`0x22c55e`), discrete action payload executed.
 
+### 5.4 GPU Buffer-Geometry Particle Engine Architecture (Phase 5, Step 5.1)
+
+Step 5.1 implements a modular, high-density GPU particle architecture foundation replacing the legacy inline CPU loop:
+
+1. **BufferGeometry Vertex Attribute Layout:**
+   - `position` (`Float32Array`, $N \times 3$): Initial base 3D particle coordinates in world space.
+   - `aVelocity` (`Float32Array`, $N \times 3$): Base velocity vector providing static displacement amplitude for GPU orbital drift.
+   - `aPhase` (`Float32Array`, $N \times 1$): Individual particle phase offset for non-synchronized pulsation and harmonic orbit.
+   - `aSize` (`Float32Array`, $N \times 1$): Individual base size multiplier ($0.5$ to $1.5$).
+   - `aColor` (`Float32Array`, $N \times 3$): Per-particle RGB palette mix (cyan, electric blue, bright aqua).
+   - `aLifetime` (`Float32Array`, $N \times 2$): Normalized age and lifespan parameters $(t_{\text{age}}, t_{\text{life}})$ reserved for future lifecycle and alpha fading functionality.
+
+2. **GLSL Point Sprite Shader Pipeline & Procedural GPU Vertex Animation:**
+   - **Vertex Attenuation & Procedural Orbital Displacement:**
+     $$\text{pointSize} = uBaseSize \times aSize \times \text{pulsate} \times \left(\frac{uDpr}{-mvPosition.z}\right)$$
+     Attenuated point size is clamped within $[1.0, 128.0]\text{ px}$ to prevent vertex explosion near the camera plane.
+     When `uGpuMotion = 1.0`, the vertex shader computes closed-form harmonic orbital displacement directly on the GPU without per-frame CPU-to-GPU buffer re-uploads.
+   - **Liquid Droplet Surface Normal Reconstruction (Fragment Shader):**
+     Within point quad coordinates $(u, v) \in [0, 1]^2$, centered coordinate vector $\mathbf{c} = 2\mathbf{uv} - 1$ is tested against unit radius $r^2 = \mathbf{c} \cdot \mathbf{c}$.
+     If $r^2 > 1.0$, the fragment is discarded via `discard`.
+     Analytical hemisphere surface normal is derived as:
+     $$\mathbf{N} = \begin{bmatrix} c_x \\ -c_y \\ \sqrt{1 - r^2} \end{bmatrix}$$
+   - **Holographic Droplet Shading & Additive Blending:**
+     - Blending mode: `THREE.AdditiveBlending` with `depthWrite: false` and `transparent: true`.
+     - Specular Glint: $(\max(0.0, \mathbf{N} \cdot \mathbf{H}))^{32.0} \times \text{specularColor}$.
+     - Fresnel Rim Glow: $(1.0 - N_z)^{3.2} \times \text{rimColor}$.
+     - Edge Anti-Aliasing: $\alpha = (1.0 - \text{smoothstep}(0.80, 1.0, r^2)) \times uOpacity$ enforcing valid GLSL edge ordering ($edge0 < edge1$).
+
+3. **CPU/GPU Responsibility Separation & Dynamic Scaling:**
+   - **CPU:** Allocates buffer geometry once to `maxCount` (15,000 particles); scales active density in $O(1)$ time via `geometry.setDrawRange(0, count)`; synchronizes state with `StateManager` and bidirectional `EventBus` commands.
+   - **GPU:** Evaluates procedural motion and point size attenuation in vertex shaders; computes droplet normal, specular glint, and Fresnel rim in fragment shaders.
+   - **Frustum Culling Policy:** The `THREE.Points` object intentionally sets `frustumCulled = false` (consistent with `displayQuadMesh` and `sdfQuadMesh`), bypassing CPU-side frustum tests because procedural GPU vertex displacement and screen-space point attenuation cause static CPU geometry bounding volumes to be unrepresentative of dynamic particle extents.
+   - **Scope Discipline:** Hand-landmark attractors/repulsors and gesture-triggered dynamics are decoupled from Step 5.1 and reserved for Steps 5.3 and 5.4.
+
+### 5.5 Configurable Particle Attraction & Repulsion Force Fields (Phase 5, Step 5.2)
+
+Step 5.2 implements a configurable GPU-side attraction and repulsion force field for the particle system:
+
+1. **Vertex Shader Displacement Formulation (`particle.vert` & `ParticleShaders.js`):**
+   - Displacement is evaluated procedurally on the GPU per vertex without CPU buffer integration:
+     $$\mathbf{d} = \mathbf{p}_{\text{center}} - \mathbf{p}_{\text{base}}$$
+     $$\text{dist} = \|\mathbf{d}\|$$
+   - Boundary culling: if $\text{dist} \ge R$ (where $R = \text{uForceRadius}$), displacement is strictly $\mathbf{0}$.
+   - Continuous falloff curve:
+     $$f(d) = \left(\text{clamp}\left(1.0 - \frac{d}{R}, 0.0, 1.0\right)\right)^{\text{falloff}}$$
+   - Direction vector with soft-core stabilization preventing division-by-zero or numerical explosion at the center:
+     $$\mathbf{dir} = \frac{\mathbf{d}}{\max(0.02, \text{dist})}$$
+   - **Attraction Mode (`uForceType = +1.0`):** Pulls particles toward the interaction center, bounded by $\min(\text{dist}, \dots)$ to guarantee particles never overshoot past the center:
+     $$\Delta \mathbf{p} = \mathbf{dir} \times \min(\text{dist}, \min(S \times f(d), \text{maxDist})) \times \text{weight}$$
+   - **Repulsion Mode (`uForceType = -1.0`):** Pushes particles outward away from the center:
+     $$\Delta \mathbf{p} = -\mathbf{dir} \times \min(S \times f(d), \text{maxDist}) \times \text{weight}$$
+
+2. **Temporal Smoothing & Transition Lifecycle (CPU-Side):**
+   - Activation, deactivation, and position transitions are smoothly interpolated in the 60 FPS update loop:
+     $$\alpha = 1.0 - \exp(-\lambda \cdot \Delta t), \quad \lambda = 12.0$$
+   - `clearForceField()` fades target weight to zero; particles smoothly return to natural autonomous orbital flow without snapping.
+   - Initial activation snaps the center point if previous weight was zero, preventing cross-screen particle sweeping.
+
+3. **API & Decoupled State Integration:**
+   - `particleEngine.setAttractor(position, options)`
+   - `particleEngine.setRepulsor(position, options)`
+   - `particleEngine.setForceField(mode, position, options)`
+   - `particleEngine.updateForceField(position, options)`
+   - `particleEngine.clearForceField()`
+   - `particleEngine.getForceFieldState()`
+   - Synchronized with `StateManager.state.rendering.particles.forceField` and `EventBus` (`PARTICLE_FORCE_FIELD`).
+
+4. **Hand-Controlled Particle Interaction (Phase 5, Step 5.3):**
+   - **Dual-Hand Force Field Uniforms in Vertex Shader:**
+     - Field 1 (`uForce*`): Driven by Right Hand (or manual force field when programmatic API is active).
+     - Field 2 (`uForce2*`): Driven by Left Hand.
+     - Vectorial displacement accumulation: $\mathbf{d}_{\text{total}} = \mathbf{d}_1 + \mathbf{d}_2$, clamped to $\max(M_1, M_2)$ to guarantee numerical stability.
+   - **Single-Hand & Two-Hand Interaction Modes:**
+     - Left hand defaults to `'repel'` (pusher/shield dynamic); Right hand defaults to `'attract'` (gravitational attractor).
+     - `singleHandMode` override dynamically unifies force type when only one hand is in the camera view if configured.
+   - **Tracking Loss Grace & Reacquisition Snapping:**
+     - 150ms grace window prevents particle field collapse during transient tracking loss or occlusions.
+     - Exponential fade-out ($\lambda = 10.0$) smoothly returns particles to natural orbital mist when tracking is lost.
+     - Positional snapping upon reacquisition resets coordinates without dragging or sweeping particles across the viewport.
+   - **APIs & State Integration:**
+     - `particleEngine.updateHandInteraction(controllers, dt, currentTimeMs)`
+     - `particleEngine.setHandMode(hand, mode)`
+     - `particleEngine.setHandForceField(hand, options)`
+     - `particleEngine.setHandInteractionEnabled(enabled)`
+     - `particleEngine.getHandForceState(hand)`
+     - Synchronized with `StateManager.state.rendering.particles.handInteraction` and `EventBus` (`PARTICLE_HAND_INTERACTION`).
+
 ---
 
 ## 6. Proposed Project Folder Structure
@@ -423,14 +510,14 @@ The project structure is designed to be cleanly modularized, allowing step-by-st
     │   ├── HologramRings.js       # Concentric multi-tier counter-rotating 3D gimbal rings
     │   ├── HologramCore.js        # Central layered geometric power core with breathing crystal & cage
     │   ├── HologramCursor.js      # 3D interactive holographic reticle with gestural contraction/expansion (Phase 4, Step 4.2)
-    │   ├── InteractableHologram.js # Extensible interactable holographic entity with state feedback & reticle brackets (Phase 4, Step 4.3)
+    │   ├── InteractableHologram.js # Extensible interactable holographic entity with state feedback, persistent transforms (userScale, userRotation), and reticle brackets (Phase 4, Step 4.3 & 4.4)
     │   ├── HologramScene.js       # Holographic scene graph layer mounting to Three.js scene
     │   └── HologramManager.js     # Central coordinator, lifecycle management & runtime debug telemetry
     │
-    ├── interaction/               # Dual-Hand 3D Interaction Engine (Phase 4, Step 4.2 & 4.3) [COMPLETED]
+    ├── interaction/               # Dual-Hand 3D Interaction Engine (Phase 4, Step 4.2–4.4) [IN PROGRESS]
     │   ├── HandController.js      # Independent left & right 3D hand controllers with EMA smoothing & velocity
     │   ├── TwoHandMetrics.js      # Dual-hand spatial metrics (distance, midpoint, deltas, span ratio)
-    │   ├── HolographicObjectManager.js # Gesture-controlled object interaction manager, proximity hit-testing & drag coordinator (Phase 4, Step 4.3)
+    │   ├── HolographicObjectManager.js # Gesture-controlled object interaction manager, proximity hit-testing, drag coordinator & two-hand RST engine (Phase 4, Step 4.3 & 4.4)
     │   └── InteractionEngine.js   # Master interaction coordinator, StateManager sync & lifecycle events
     │
     ├── scene/                     # Three.js 3D rendering environment (Phase 4)
@@ -443,9 +530,10 @@ The project structure is designed to be cleanly modularized, allowing step-by-st
     │   ├── StatusMatrix.js        # Real-time telemetry matrix panel
     │   └── ModeSelector.js        # 3D spatial elemental mode selector
     │
-    ├── particles/                 # Particle physics systems
-    │   ├── ParticleEngine.js      # GPU buffer-geometry particle simulation
-    │   └── ForceFields.js         # Simplex/curl noise, attraction & repulsion fields
+    ├── particles/                 # Particle physics systems (Phase 5) [IN PROGRESS]
+    │   ├── ParticleEngine.js      # Singleton GPU buffer-geometry particle simulation controller
+    │   ├── ParticleShaders.js     # Custom ShaderMaterial factory, uniforms & embedded GLSL shaders
+    │   └── ForceFields.js         # (Phase 5, Step 5.2) Simplex/curl noise, attraction & repulsion fields
     │
     ├── vfx/                       # Elemental visual effects & superpowers
     │   ├── ShaderVFXEngine.js     # Elemental shader and effect coordinator
@@ -456,6 +544,8 @@ The project structure is designed to be cleanly modularized, allowing step-by-st
     │
     ├── shaders/                   # Pure GLSL shader source files
     │   ├── vfx/                   # Elemental shader programs (.vert, .frag)
+    │   │   ├── particle.vert      # GPU particle vertex shader (attenuation, orbital displacement)
+    │   │   └── particle.frag      # GPU particle fragment shader (droplet normal, glint, Fresnel rim)
     │   └── post/                  # Custom post-processing shader programs (.frag)
     │
     ├── audio/                     # Audio and voice systems
