@@ -29,8 +29,11 @@ export class CameraManager {
     this._idealWidth = options.width || AppConfig.camera?.idealWidth || AppConfig.tracking.videoIdealWidth || 1280;
     this._idealHeight = options.height || AppConfig.camera?.idealHeight || AppConfig.tracking.videoIdealHeight || 720;
     this._idealFrameRate = options.frameRate || AppConfig.camera?.idealFrameRate || 60;
+    this._acquisitionTimeoutMs = options.acquisitionTimeoutMs || AppConfig.camera?.acquisitionTimeoutMs || 10000;
 
     this._isStarting = false;
+    this._hasInFlightHardwareRequest = false;
+    this._currentSessionId = 0;
     this._deviceChangeHandler = null;
     this._trackEndedHandler = null;
   }
@@ -106,6 +109,14 @@ export class CameraManager {
       return this._stream;
     }
 
+    // Do not start a second getUserMedia request while a timed-out request is still pending
+    if (this._hasInFlightHardwareRequest) {
+      const busyErr = new Error('[CameraManager] A camera request is still pending at the hardware level; cannot start overlapping request.');
+      busyErr.name = 'TrackStartError';
+      this._handleError(busyErr);
+      throw busyErr;
+    }
+
     // Guard against re-entrant calls while async initialization is in-flight
     if (this._isStarting) {
       return new Promise((resolve, reject) => {
@@ -120,6 +131,7 @@ export class CameraManager {
     }
 
     this._isStarting = true;
+    const sessionId = ++this._currentSessionId;
 
     if (!this._videoEl) {
       this.init();
@@ -130,7 +142,7 @@ export class CameraManager {
         facingMode: this._facingMode,
         width: { ideal: this._idealWidth },
         height: { ideal: this._idealHeight },
-        frameRate: { ideal: this._idealFrameRate, min: 30 }
+        frameRate: { ideal: this._idealFrameRate }
       },
       audio: false
     };
@@ -138,8 +150,16 @@ export class CameraManager {
     let stream = null;
 
     try {
-      stream = await navigator.mediaDevices.getUserMedia(preferredConstraints);
+      stream = await this._requestMediaStream(preferredConstraints, sessionId);
     } catch (err) {
+      // If the request timed out or session was invalidated, do not attempt fallback constraints
+      // (overlapping requests while hardware request is pending are strictly forbidden)
+      if (err.name === 'TimeoutError' || this._currentSessionId !== sessionId) {
+        this._isStarting = false;
+        this._handleError(err);
+        throw err;
+      }
+
       console.warn('[CameraManager] Preferred constraints failed, attempting fallback constraints:', err);
       try {
         // Fallback 1: user-facing without strict resolution bounds
@@ -147,18 +167,35 @@ export class CameraManager {
           video: { facingMode: this._facingMode },
           audio: false
         };
-        stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        stream = await this._requestMediaStream(fallbackConstraints, sessionId);
       } catch (fallbackErr) {
+        if (fallbackErr.name === 'TimeoutError' || this._currentSessionId !== sessionId) {
+          this._isStarting = false;
+          this._handleError(fallbackErr);
+          throw fallbackErr;
+        }
+
         console.warn('[CameraManager] Secondary fallback failed, attempting generic video:', fallbackErr);
         // Fallback 2: generic video capture
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          stream = await this._requestMediaStream({ video: true, audio: false }, sessionId);
         } catch (finalErr) {
           this._isStarting = false;
           this._handleError(finalErr);
           throw finalErr;
         }
       }
+    }
+
+    // Guard against session change or stop() called while stream was being acquired
+    if (this._currentSessionId !== sessionId) {
+      if (stream) {
+        this._stopStreamTracks(stream);
+      }
+      this._isStarting = false;
+      const abortErr = new Error('[CameraManager] Camera startup aborted due to state/session change');
+      abortErr.name = 'AbortError';
+      throw abortErr;
     }
 
     this._stream = stream;
@@ -203,6 +240,15 @@ export class CameraManager {
       }
     });
 
+    // Check again if session changed during video play / readyState wait
+    if (this._currentSessionId !== sessionId) {
+      this.stop();
+      this._isStarting = false;
+      const abortErr = new Error('[CameraManager] Camera startup aborted during playback ready check');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+
     this._isStarting = false;
 
     // Retrieve active stream track properties
@@ -231,6 +277,9 @@ export class CameraManager {
    * Safely stop all active media tracks and detach from video element
    */
   stop() {
+    this._currentSessionId++;
+    this._isStarting = false;
+
     if (this._stream) {
       const tracks = this._stream.getTracks();
       tracks.forEach((track) => {
@@ -245,6 +294,9 @@ export class CameraManager {
     if (this._videoEl) {
       this._videoEl.srcObject = null;
     }
+
+    stateManager.setCameraState(false, stateManager.state.camera.delegate, false);
+  }
 
     stateManager.setCameraState(false, stateManager.state.camera.delegate, false);
   }
@@ -319,6 +371,101 @@ export class CameraManager {
   }
 
   /**
+   * Request media stream with acquisition timeout and late-resolution protection
+   * @private
+   * @param {MediaStreamConstraints} constraints
+   * @param {number} sessionId
+   * @returns {Promise<MediaStream>}
+   */
+  _requestMediaStream(constraints, sessionId) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const err = new Error('navigator.mediaDevices.getUserMedia is not supported on this browser');
+      err.name = 'NotSupportedError';
+      return Promise.reject(err);
+    }
+
+    this._hasInFlightHardwareRequest = true;
+
+    return new Promise((resolve, reject) => {
+      let timerId = null;
+      let timedOut = false;
+      let settled = false;
+
+      timerId = setTimeout(() => {
+        if (settled) return;
+        timedOut = true;
+        settled = true;
+        timerId = null;
+
+        const timeoutErr = new Error(`Camera acquisition timed out after ${this._acquisitionTimeoutMs}ms`);
+        timeoutErr.name = 'TimeoutError';
+        reject(timeoutErr);
+      }, this._acquisitionTimeoutMs);
+
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then((stream) => {
+          this._hasInFlightHardwareRequest = false;
+
+          if (timerId) {
+            clearTimeout(timerId);
+            timerId = null;
+          }
+
+          // Check if request timed out or session became stale/invalidated
+          if (timedOut || this._currentSessionId !== sessionId) {
+            console.warn('[CameraManager] Discarding late-resolving camera stream from timed-out or obsolete session.');
+            this._stopStreamTracks(stream);
+            if (!settled) {
+              settled = true;
+              const abortErr = new Error('[CameraManager] Stream discarded due to obsolete session.');
+              abortErr.name = 'AbortError';
+              reject(abortErr);
+            }
+            return;
+          }
+
+          settled = true;
+          resolve(stream);
+        })
+        .catch((err) => {
+          this._hasInFlightHardwareRequest = false;
+
+          if (timerId) {
+            clearTimeout(timerId);
+            timerId = null;
+          }
+
+          if (timedOut || this._currentSessionId !== sessionId) {
+            // Late rejection after timeout or session cancellation.
+            // Safely swallowed to prevent unhandled promise rejection.
+            console.warn('[CameraManager] Late getUserMedia rejection safely swallowed:', err.name || err.message);
+            return;
+          }
+
+          settled = true;
+          reject(err);
+        });
+    });
+  }
+
+  /**
+   * Helper to stop all tracks of a MediaStream safely
+   * @private
+   * @param {MediaStream} stream
+   */
+  _stopStreamTracks(stream) {
+    if (!stream) return;
+    try {
+      const tracks = stream.getTracks ? stream.getTracks() : [];
+      tracks.forEach((track) => {
+        try {
+          track.stop();
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  /**
    * Translate and emit standardized camera errors
    * @private
    * @param {Error} err
@@ -327,6 +474,9 @@ export class CameraManager {
     let friendlyMessage = 'Camera initialization failed.';
 
     switch (err.name) {
+      case 'TimeoutError':
+        friendlyMessage = `Camera acquisition timed out (${Math.round(this._acquisitionTimeoutMs / 1000)}s). Mouse fallback active.`;
+        break;
       case 'NotAllowedError':
       case 'PermissionDeniedError':
         friendlyMessage = 'Camera access denied by user. Mouse fallback active.';

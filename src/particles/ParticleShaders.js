@@ -23,8 +23,8 @@ uniform float uDpr;
 uniform float uSpeed;
 uniform float uGpuMotion;
 
-// Dual-Hand Force Field Uniforms (Phase 5, Steps 5.2 & 5.3)
-// Force Field 1 (Primary / Right Hand / Manual API)
+// Dual-Hand & Manual Force Field Uniforms (Phase 5, Steps 5.2 & 5.3)
+// Force Field 1 (Manual API - Phase 5, Step 5.2)
 uniform vec3 uForcePosition;
 uniform float uForceRadius;
 uniform float uForceStrength;
@@ -33,7 +33,7 @@ uniform float uForceMaxDist;
 uniform float uForceType;   // +1.0 = attract, -1.0 = repel, 0.0 = none
 uniform float uForceWeight; // [0.0, 1.0] smooth transition weight
 
-// Force Field 2 (Secondary / Left Hand)
+// Force Field 2 (Left Hand - Phase 5, Step 5.3)
 uniform vec3 uForce2Position;
 uniform float uForce2Radius;
 uniform float uForce2Strength;
@@ -41,6 +41,15 @@ uniform float uForce2Falloff;
 uniform float uForce2MaxDist;
 uniform float uForce2Type;   // +1.0 = attract, -1.0 = repel, 0.0 = none
 uniform float uForce2Weight; // [0.0, 1.0] smooth transition weight
+
+// Force Field 3 (Right Hand - Phase 5, Step 5.3)
+uniform vec3 uForce3Position;
+uniform float uForce3Radius;
+uniform float uForce3Strength;
+uniform float uForce3Falloff;
+uniform float uForce3MaxDist;
+uniform float uForce3Type;   // +1.0 = attract, -1.0 = repel, 0.0 = none
+uniform float uForce3Weight; // [0.0, 1.0] smooth transition weight
 
 varying vec3 vWorldPos;
 varying float vPhase;
@@ -60,8 +69,8 @@ vec3 computeGpuOrbitalMotion(vec3 basePos, vec3 velocity, float phase, float t) 
   return basePos + orbit * 0.35 + drift;
 }
 
-// Configurable Attraction & Repulsion Force Field (Phase 5, Steps 5.2 & 5.3)
-vec3 computeSingleForceDisplacement(vec3 p, vec3 center, float radius, float strength, float falloffExp, float maxDist, float forceType, float weight) {
+// Configurable Cinematic Attraction Vortex & Repulsion Kinetic Wave Force Field (Phase 5, Step 5.3 - Stage 1)
+vec3 computeSingleForceDisplacement(vec3 p, vec3 center, float radius, float strength, float falloffExp, float maxDist, float forceType, float weight, float time, float phase) {
   if (abs(forceType) < 0.01 || weight < 0.001 || radius <= 0.001) {
     return vec3(0.0);
   }
@@ -78,19 +87,67 @@ vec3 computeSingleForceDisplacement(vec3 p, vec3 center, float radius, float str
   // Continuous falloff curve: 1.0 at center, smoothly decaying to 0.0 at boundary
   float falloff = pow(clamp(1.0 - normDist, 0.0, 1.0), falloffExp);
 
-  // Normalized direction with epsilon preventing division-by-zero or explosion near center
+  // Normalized direction toward center with epsilon preventing division-by-zero
   vec3 dir = toCenter / max(0.02, dist);
+
+  // Orthonormal tangent basis perpendicular to radial direction 'dir'
+  // Avoid collinear singularity with z-axis by branching on abs(dir.z)
+  vec3 refAxis = abs(dir.z) < 0.92 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+  vec3 tangent = cross(dir, refAxis);
+  float tanLen = length(tangent);
+  tangent = tanLen > 0.001 ? tangent / tanLen : vec3(1.0, 0.0, 0.0);
+  vec3 bitangent = cross(dir, tangent);
 
   vec3 displacement = vec3(0.0);
   if (forceType > 0.5) {
-    // Attraction: move toward center, bounded so particles never overshoot center
+    // -------------------------------------------------------------
+    // Implementation A: Cinematic Attraction Gravitational Vortex
+    // -------------------------------------------------------------
+    // 1. Inward radial pull: bounded so particles cannot overshoot center
     float pull = min(dist, strength * falloff);
     pull = min(pull, maxDist);
-    displacement = dir * pull;
+
+    // 2. Differential spiral swirl angle: inner particles wind faster than outer
+    //    Continuous time rotation ensures particles swirl even when hand is stationary
+    float swirlAngle = time * 2.2 + phase * 1.5 + (1.0 - normDist) * 3.14159;
+
+    // 3. Elliptical 3D orbital displacement on perpendicular tangent plane
+    vec3 swirlDir = tangent * cos(swirlAngle) + bitangent * (sin(swirlAngle) * 0.35);
+
+    // 4. Swirl intensity envelope: (normDist * falloff) vanishes smoothly at BOTH:
+    //    - center (normDist -> 0.0, eliminating infinite spin singularity at finger core)
+    //    - boundary (normDist -> 1.0, where falloff -> 0.0, eliminating seam jumps)
+    float swirlIntensity = (normDist * falloff) * (strength * 0.45);
+    swirlIntensity = min(swirlIntensity, maxDist * 0.40);
+
+    displacement = dir * pull + swirlDir * swirlIntensity;
+
   } else if (forceType < -0.5) {
-    // Repulsion: push away from center, smooth and stable near center
+    // -------------------------------------------------------------
+    // Implementation B: Kinetic Repulsion Propagating Harmonic Waves
+    // -------------------------------------------------------------
+    // 1. Base outward radial push: smooth and bounded
     float push = min(strength * falloff, maxDist);
-    displacement = -dir * push;
+
+    // 2. Outward-propagating harmonic wave phase (k*r - omega*t)
+    //    Wave crests continuously travel outward from hand position
+    float wavePhase = normDist * 12.0 - time * 5.0 + phase * 0.8;
+
+    // 3. Strictly positive wave modulation [0.72 to 1.28]:
+    //    Guarantees outward push NEVER reverses or pulls backward
+    float waveFactor = 1.0 + 0.28 * sin(wavePhase);
+
+    // 4. Subtle organic lateral dispersion along tangent plane (tapers to 0 at boundary via push)
+    float turbPhase = normDist * 8.0 - time * 3.5 + phase * 1.4;
+    vec3 lateralDisp = tangent * (sin(turbPhase) * 0.12 * push) + bitangent * (cos(turbPhase * 0.7) * 0.08 * push);
+
+    displacement = -dir * (push * waveFactor) + lateralDisp;
+  }
+
+  // Safety clamp to guarantee displacement never exceeds maxDist
+  float dispLen = length(displacement);
+  if (dispLen > maxDist && dispLen > 0.0001) {
+    displacement = (displacement / dispLen) * maxDist;
   }
 
   return displacement * weight;
@@ -98,7 +155,7 @@ vec3 computeSingleForceDisplacement(vec3 p, vec3 center, float radius, float str
 
 // Backward-compatible helper for single force field
 vec3 computeForceDisplacement(vec3 p) {
-  return computeSingleForceDisplacement(p, uForcePosition, uForceRadius, uForceStrength, uForceFalloff, uForceMaxDist, uForceType, uForceWeight);
+  return computeSingleForceDisplacement(p, uForcePosition, uForceRadius, uForceStrength, uForceFalloff, uForceMaxDist, uForceType, uForceWeight, uTime, aPhase);
 }
 
 void main() {
@@ -108,11 +165,12 @@ void main() {
   // Evaluate base 3D position (GPU procedural motion or base position)
   vec3 baseMotionPos = mix(position, computeGpuOrbitalMotion(position, aVelocity, aPhase, uTime), uGpuMotion);
   
-  // Apply Dual-Hand GPU Force Fields (Attraction / Repulsion) — Phase 5, Steps 5.2 & 5.3
-  vec3 disp1 = computeSingleForceDisplacement(baseMotionPos, uForcePosition, uForceRadius, uForceStrength, uForceFalloff, uForceMaxDist, uForceType, uForceWeight);
-  vec3 disp2 = computeSingleForceDisplacement(baseMotionPos, uForce2Position, uForce2Radius, uForce2Strength, uForce2Falloff, uForce2MaxDist, uForce2Type, uForce2Weight);
-  vec3 totalDisp = disp1 + disp2;
-  float maxAllowed = max(uForceMaxDist, uForce2MaxDist);
+  // Apply Dual-Hand & Manual GPU Force Fields (Attraction / Repulsion) — Phase 5, Steps 5.2 & 5.3
+  vec3 dispManual = computeSingleForceDisplacement(baseMotionPos, uForcePosition, uForceRadius, uForceStrength, uForceFalloff, uForceMaxDist, uForceType, uForceWeight, uTime, aPhase);
+  vec3 dispLeft   = computeSingleForceDisplacement(baseMotionPos, uForce2Position, uForce2Radius, uForce2Strength, uForce2Falloff, uForce2MaxDist, uForce2Type, uForce2Weight, uTime, aPhase);
+  vec3 dispRight  = computeSingleForceDisplacement(baseMotionPos, uForce3Position, uForce3Radius, uForce3Strength, uForce3Falloff, uForce3MaxDist, uForce3Type, uForce3Weight, uTime, aPhase);
+  vec3 totalDisp = dispManual + dispLeft + dispRight;
+  float maxAllowed = max(uForceMaxDist, max(uForce2MaxDist, uForce3MaxDist));
   float dispLen = length(totalDisp);
   if (dispLen > maxAllowed && dispLen > 0.0001) {
     totalDisp = (totalDisp / dispLen) * maxAllowed;
@@ -200,7 +258,7 @@ export class ParticleShaders {
         uSpecularColor: { value: new THREE.Color(specColorHex) },
         uRimColor: { value: new THREE.Color(rimColorHex) },
         // Force Field Uniforms (Phase 5, Step 5.2 & 5.3)
-        // Force Field 1 (Primary / Right Hand / Manual API)
+        // Force Field 1 (Manual API - Phase 5, Step 5.2)
         uForcePosition: { value: new THREE.Vector3(0.0, 0.0, 0.0) },
         uForceRadius: { value: cfg.forceField?.radius || 2.20 },
         uForceStrength: { value: 0.0 },
@@ -208,14 +266,22 @@ export class ParticleShaders {
         uForceMaxDist: { value: cfg.forceField?.maxDisplacement || 2.50 },
         uForceType: { value: 0.0 }, // +1.0 = attract, -1.0 = repel, 0.0 = none
         uForceWeight: { value: 0.0 }, // 0.0 = inactive, 1.0 = fully active
-        // Force Field 2 (Secondary / Left Hand)
+        // Force Field 2 (Left Hand - Phase 5, Step 5.3)
         uForce2Position: { value: new THREE.Vector3(0.0, 0.0, 0.0) },
-        uForce2Radius: { value: cfg.handInteraction?.radius || cfg.forceField?.radius || 2.20 },
+        uForce2Radius: { value: cfg.handInteraction?.left?.radius || cfg.handInteraction?.radius || cfg.forceField?.radius || 2.20 },
         uForce2Strength: { value: 0.0 },
-        uForce2Falloff: { value: cfg.handInteraction?.falloff || cfg.forceField?.falloff || 2.0 },
-        uForce2MaxDist: { value: cfg.handInteraction?.maxDisplacement || cfg.forceField?.maxDisplacement || 2.50 },
+        uForce2Falloff: { value: cfg.handInteraction?.left?.falloff || cfg.handInteraction?.falloff || cfg.forceField?.falloff || 2.0 },
+        uForce2MaxDist: { value: cfg.handInteraction?.left?.maxDisplacement || cfg.handInteraction?.maxDisplacement || cfg.forceField?.maxDisplacement || 2.50 },
         uForce2Type: { value: 0.0 },
-        uForce2Weight: { value: 0.0 }
+        uForce2Weight: { value: 0.0 },
+        // Force Field 3 (Right Hand - Phase 5, Step 5.3)
+        uForce3Position: { value: new THREE.Vector3(0.0, 0.0, 0.0) },
+        uForce3Radius: { value: cfg.handInteraction?.right?.radius || cfg.handInteraction?.radius || cfg.forceField?.radius || 2.20 },
+        uForce3Strength: { value: 0.0 },
+        uForce3Falloff: { value: cfg.handInteraction?.right?.falloff || cfg.handInteraction?.falloff || cfg.forceField?.falloff || 2.0 },
+        uForce3MaxDist: { value: cfg.handInteraction?.right?.maxDisplacement || cfg.handInteraction?.maxDisplacement || cfg.forceField?.maxDisplacement || 2.50 },
+        uForce3Type: { value: 0.0 },
+        uForce3Weight: { value: 0.0 }
       }
     });
   }

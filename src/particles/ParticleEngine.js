@@ -77,6 +77,9 @@ export class ParticleEngine {
     // Hand-Controlled Particle Interaction (Phase 5, Step 5.3)
     this._handCfg = this._cfg.handInteraction || {};
     this._handInteractionEnabled = this._handCfg.enabled !== false;
+    const leftCfg = this._handCfg.left || {};
+    const rightCfg = this._handCfg.right || {};
+
     this._hands = {
       left: {
         detected: false,
@@ -84,14 +87,16 @@ export class ParticleEngine {
         lastSeenTime: 0,
         position: new THREE.Vector3(0, 0, 0),
         targetPosition: new THREE.Vector3(0, 0, 0),
-        mode: this._handCfg.leftMode || 'repel',
-        targetMode: this._handCfg.leftMode || 'repel',
-        radius: this._handCfg.radius || 2.20,
-        targetRadius: this._handCfg.radius || 2.20,
+        mode: leftCfg.mode || this._handCfg.leftMode || 'repel',
+        targetMode: leftCfg.mode || this._handCfg.leftMode || 'repel',
+        radius: leftCfg.radius || this._handCfg.radius || 2.20,
+        targetRadius: leftCfg.radius || this._handCfg.radius || 2.20,
         strength: 0.0,
         targetStrength: 0.0,
-        falloff: this._handCfg.falloff || 2.0,
-        maxDisplacement: this._handCfg.maxDisplacement || 2.50,
+        attractStrength: leftCfg.attractStrength || this._handCfg.attractStrength || 1.20,
+        repelStrength: leftCfg.repelStrength || this._handCfg.repelStrength || 1.50,
+        falloff: leftCfg.falloff || this._handCfg.falloff || 2.0,
+        maxDisplacement: leftCfg.maxDisplacement || this._handCfg.maxDisplacement || 2.50,
         weight: 0.0,
         targetWeight: 0.0,
         smoothing: this._handCfg.smoothing || 18.0
@@ -102,14 +107,16 @@ export class ParticleEngine {
         lastSeenTime: 0,
         position: new THREE.Vector3(0, 0, 0),
         targetPosition: new THREE.Vector3(0, 0, 0),
-        mode: this._handCfg.rightMode || 'attract',
-        targetMode: this._handCfg.rightMode || 'attract',
-        radius: this._handCfg.radius || 2.20,
-        targetRadius: this._handCfg.radius || 2.20,
+        mode: rightCfg.mode || this._handCfg.rightMode || 'attract',
+        targetMode: rightCfg.mode || this._handCfg.rightMode || 'attract',
+        radius: rightCfg.radius || this._handCfg.radius || 2.20,
+        targetRadius: rightCfg.radius || this._handCfg.radius || 2.20,
         strength: 0.0,
         targetStrength: 0.0,
-        falloff: this._handCfg.falloff || 2.0,
-        maxDisplacement: this._handCfg.maxDisplacement || 2.50,
+        attractStrength: rightCfg.attractStrength || this._handCfg.attractStrength || 1.20,
+        repelStrength: rightCfg.repelStrength || this._handCfg.repelStrength || 1.50,
+        falloff: rightCfg.falloff || this._handCfg.falloff || 2.0,
+        maxDisplacement: rightCfg.maxDisplacement || this._handCfg.maxDisplacement || 2.50,
         weight: 0.0,
         targetWeight: 0.0,
         smoothing: this._handCfg.smoothing || 18.0
@@ -462,16 +469,14 @@ export class ParticleEngine {
           h.targetStrength = 0.0;
         } else {
           h.targetWeight = 1.0;
-          const defaultStrength = effectiveMode === 'attract'
-            ? (this._handCfg.attractStrength || 1.20)
-            : (this._handCfg.repelStrength || 1.50);
+          const defaultStrength = effectiveMode === 'attract' ? h.attractStrength : h.repelStrength;
           h.targetStrength = defaultStrength;
         }
       } else {
         // Tracking not detected in current frame
         const elapsedSinceSeen = currentTimeMs - h.lastSeenTime;
         if (elapsedSinceSeen > graceMs) {
-          // Grace period elapsed -> mark as lost and target zero weight
+          // Grace period elapsed -> mark as lost and smoothly fade weight to zero
           h.detected = false;
           h.targetWeight = 0.0;
           h.targetStrength = 0.0;
@@ -531,30 +536,41 @@ export class ParticleEngine {
     uniforms.uTime.value = time;
     uniforms.uGpuMotion.value = this._simulationMode === 'gpu' ? 1.0 : 0.0;
 
-    // Field 1: Manual force field takes priority if active; otherwise Right Hand drives Field 1
-    const isManualActive = ff.targetWeight > 0.0 || ff.weight > 0.001;
-    const f1 = (isManualActive || !this._handInteractionEnabled) ? ff : this._hands.right;
+    // Field 1: Manual force field (Phase 5, Step 5.2 API: setAttractor, setRepulsor, etc.)
+    uniforms.uForcePosition.value.copy(ff.position);
+    uniforms.uForceRadius.value = ff.radius;
+    uniforms.uForceStrength.value = ff.strength;
+    uniforms.uForceFalloff.value = ff.falloff;
+    uniforms.uForceMaxDist.value = ff.maxDisplacement;
+    uniforms.uForceType.value = ff.mode === 'attract' ? 1.0 : (ff.mode === 'repel' ? -1.0 : 0.0);
+    uniforms.uForceWeight.value = ff.weight;
 
-    uniforms.uForcePosition.value.copy(f1.position);
-    uniforms.uForceRadius.value = f1.radius;
-    uniforms.uForceStrength.value = f1.strength;
-    uniforms.uForceFalloff.value = f1.falloff;
-    uniforms.uForceMaxDist.value = f1.maxDisplacement;
-    uniforms.uForceType.value = f1.mode === 'attract' ? 1.0 : (f1.mode === 'repel' ? -1.0 : 0.0);
-    uniforms.uForceWeight.value = f1.weight;
-
-    // Field 2: Left Hand drives Field 2
-    const f2 = this._handInteractionEnabled ? this._hands.left : null;
-    if (f2 && uniforms.uForce2Position) {
-      uniforms.uForce2Position.value.copy(f2.position);
-      uniforms.uForce2Radius.value = f2.radius;
-      uniforms.uForce2Strength.value = f2.strength;
-      uniforms.uForce2Falloff.value = f2.falloff;
-      uniforms.uForce2MaxDist.value = f2.maxDisplacement;
-      uniforms.uForce2Type.value = f2.mode === 'attract' ? 1.0 : (f2.mode === 'repel' ? -1.0 : 0.0);
-      uniforms.uForce2Weight.value = f2.weight;
+    // Field 2: Left Hand (Phase 5, Step 5.3)
+    const fLeft = this._handInteractionEnabled ? this._hands.left : null;
+    if (fLeft && uniforms.uForce2Position) {
+      uniforms.uForce2Position.value.copy(fLeft.position);
+      uniforms.uForce2Radius.value = fLeft.radius;
+      uniforms.uForce2Strength.value = fLeft.strength;
+      uniforms.uForce2Falloff.value = fLeft.falloff;
+      uniforms.uForce2MaxDist.value = fLeft.maxDisplacement;
+      uniforms.uForce2Type.value = fLeft.mode === 'attract' ? 1.0 : (fLeft.mode === 'repel' ? -1.0 : 0.0);
+      uniforms.uForce2Weight.value = fLeft.weight;
     } else if (uniforms.uForce2Weight) {
       uniforms.uForce2Weight.value = 0.0;
+    }
+
+    // Field 3: Right Hand (Phase 5, Step 5.3)
+    const fRight = this._handInteractionEnabled ? this._hands.right : null;
+    if (fRight && uniforms.uForce3Position) {
+      uniforms.uForce3Position.value.copy(fRight.position);
+      uniforms.uForce3Radius.value = fRight.radius;
+      uniforms.uForce3Strength.value = fRight.strength;
+      uniforms.uForce3Falloff.value = fRight.falloff;
+      uniforms.uForce3MaxDist.value = fRight.maxDisplacement;
+      uniforms.uForce3Type.value = fRight.mode === 'attract' ? 1.0 : (fRight.mode === 'repel' ? -1.0 : 0.0);
+      uniforms.uForce3Weight.value = fRight.weight;
+    } else if (uniforms.uForce3Weight) {
+      uniforms.uForce3Weight.value = 0.0;
     }
   }
 
@@ -854,6 +870,8 @@ export class ParticleEngine {
     }
     if (options.radius !== undefined) h.targetRadius = Math.max(0.01, options.radius);
     if (options.strength !== undefined) h.targetStrength = Math.max(0.0, options.strength);
+    if (options.attractStrength !== undefined) h.attractStrength = Math.max(0.0, options.attractStrength);
+    if (options.repelStrength !== undefined) h.repelStrength = Math.max(0.0, options.repelStrength);
     if (options.falloff !== undefined) h.falloff = Math.max(0.5, options.falloff);
     if (options.maxDisplacement !== undefined) h.maxDisplacement = Math.max(0.1, options.maxDisplacement);
 
@@ -907,6 +925,8 @@ export class ParticleEngine {
       targetPosition: { x: h.targetPosition.x, y: h.targetPosition.y, z: h.targetPosition.z },
       radius: h.radius,
       strength: h.strength,
+      attractStrength: h.attractStrength,
+      repelStrength: h.repelStrength,
       falloff: h.falloff,
       maxDisplacement: h.maxDisplacement
     };
@@ -923,17 +943,21 @@ export class ParticleEngine {
       if (hand === 'left' || hand === 'both') {
         stateManager.updateParticleHand('left', {
           active: this._hands.left.active,
+          detected: this._hands.left.detected,
           mode: this._hands.left.mode,
           radius: this._hands.left.radius,
-          strength: this._hands.left.strength
+          strength: this._hands.left.strength,
+          position: this._hands.left.position
         });
       }
       if (hand === 'right' || hand === 'both') {
         stateManager.updateParticleHand('right', {
           active: this._hands.right.active,
+          detected: this._hands.right.detected,
           mode: this._hands.right.mode,
           radius: this._hands.right.radius,
-          strength: this._hands.right.strength
+          strength: this._hands.right.strength,
+          position: this._hands.right.position
         });
       }
     }
@@ -1018,6 +1042,14 @@ export class ParticleEngine {
     this._forceField.targetMode = 'none';
     this._forceField.weight = 0.0;
     this._forceField.targetWeight = 0.0;
+    this._hands.left.weight = 0.0;
+    this._hands.left.targetWeight = 0.0;
+    this._hands.left.active = false;
+    this._hands.left.detected = false;
+    this._hands.right.weight = 0.0;
+    this._hands.right.targetWeight = 0.0;
+    this._hands.right.active = false;
+    this._hands.right.detected = false;
     this._isInitialized = false;
   }
 }

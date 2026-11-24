@@ -245,15 +245,19 @@ export class StateManager {
             enabled: AppConfig.particles?.handInteraction?.enabled !== false,
             left: {
               active: false,
-              mode: AppConfig.particles?.handInteraction?.leftMode || 'repel',
-              radius: AppConfig.particles?.handInteraction?.radius || 2.20,
-              strength: 0.0
+              detected: false,
+              mode: AppConfig.particles?.handInteraction?.left?.mode || AppConfig.particles?.handInteraction?.leftMode || 'repel',
+              radius: AppConfig.particles?.handInteraction?.left?.radius || AppConfig.particles?.handInteraction?.radius || 2.20,
+              strength: 0.0,
+              position: { x: 0, y: 0, z: 0 }
             },
             right: {
               active: false,
-              mode: AppConfig.particles?.handInteraction?.rightMode || 'attract',
-              radius: AppConfig.particles?.handInteraction?.radius || 2.20,
-              strength: 0.0
+              detected: false,
+              mode: AppConfig.particles?.handInteraction?.right?.mode || AppConfig.particles?.handInteraction?.rightMode || 'attract',
+              radius: AppConfig.particles?.handInteraction?.right?.radius || AppConfig.particles?.handInteraction?.radius || 2.20,
+              strength: 0.0,
+              position: { x: 0, y: 0, z: 0 }
             }
           }
         }
@@ -956,9 +960,16 @@ export class StateManager {
     const pHand = this.state.rendering?.particles?.handInteraction?.[side];
     if (!pHand) return;
     if (data.active !== undefined) pHand.active = data.active;
+    if (data.detected !== undefined) pHand.detected = data.detected;
     if (data.mode !== undefined) pHand.mode = data.mode;
     if (data.radius !== undefined) pHand.radius = data.radius;
     if (data.strength !== undefined) pHand.strength = data.strength;
+    if (data.position !== undefined) {
+      if (!pHand.position) pHand.position = { x: 0, y: 0, z: 0 };
+      pHand.position.x = data.position.x ?? 0;
+      pHand.position.y = data.position.y ?? 0;
+      pHand.position.z = data.position.z ?? 0;
+    }
   }
 
   /**

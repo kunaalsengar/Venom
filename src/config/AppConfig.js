@@ -40,7 +40,7 @@ export const AppConfig = Object.freeze({
     idealHeight: 720,
     facingMode: 'user',
     idealFrameRate: 60,
-    minFrameRate: 30
+    acquisitionTimeoutMs: 10000
   }),
 
   /**
@@ -410,7 +410,23 @@ export const AppConfig = Object.freeze({
       smoothing: 18.0,            // Positional & parameter exponential lerp rate
       trackingLossGraceMs: 150,   // Grace period before fading out influence on tracking loss
       fadeSpeed: 10.0,            // Exponential weight fade-out rate after grace period expires
-      anchorPoint: 'position'     // Anchor point preference: 'position' | 'palm' | 'indexTip'
+      anchorPoint: 'position',    // Anchor point preference: 'position' | 'palm' | 'indexTip'
+      left: Object.freeze({
+        mode: 'repel',
+        radius: 2.20,
+        attractStrength: 1.20,
+        repelStrength: 1.50,
+        falloff: 2.0,
+        maxDisplacement: 2.50
+      }),
+      right: Object.freeze({
+        mode: 'attract',
+        radius: 2.20,
+        attractStrength: 1.20,
+        repelStrength: 1.50,
+        falloff: 2.0,
+        maxDisplacement: 2.50
+      })
     })
   }),
 

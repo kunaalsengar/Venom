@@ -951,14 +951,20 @@
         handTracker.init(videoEl);
         await handTracker.initialize();
 
-        if (watchdogTimedOut) return;
+        if (watchdogTimedOut || stateManager.state.tracking.isMouseFallback) {
+          cameraManager.stop();
+          return;
+        }
 
         // 2. Dedicated Camera Stream Acquisition via CameraManager (Phase 2, Step 2.1)
         uiManager.setLoadingMessage('Acquiring camera stream via CameraManager...');
         cameraManager.init(videoEl);
         await cameraManager.start();
 
-        if (watchdogTimedOut) return;
+        if (watchdogTimedOut || stateManager.state.tracking.isMouseFallback) {
+          cameraManager.stop();
+          return;
+        }
         clearTimeout(watchdogTimer);
 
         state.hasVideoTexture = true;
@@ -972,7 +978,7 @@
         window.__nexusReady = true;
       } catch (err) {
         clearTimeout(watchdogTimer);
-        if (watchdogTimedOut) return;
+        if (watchdogTimedOut || stateManager.state.tracking.isMouseFallback) return;
         console.warn('[PROJECT NEXUS] Camera or HandTracker initialization failed:', err);
         activateMouseFallback(
           `Notice: ${err.message || err.name || 'Unavailable'}. Mouse fallback active.`
@@ -1001,6 +1007,7 @@
         stateManager.setMouseFallback(false);
         state.hasVideoTexture = true;
         finalPass.uniforms.uHasVideo.value = 1.0;
+        uiManager.hideLoading();
       } catch (err) {
         activateMouseFallback(`Failed to reactivate camera: ${err.message || err.name}`);
       }

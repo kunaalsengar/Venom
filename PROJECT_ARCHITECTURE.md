@@ -428,10 +428,11 @@ Step 5.2 implements a configurable GPU-side attraction and repulsion force field
    - Synchronized with `StateManager.state.rendering.particles.forceField` and `EventBus` (`PARTICLE_FORCE_FIELD`).
 
 4. **Hand-Controlled Particle Interaction (Phase 5, Step 5.3):**
-   - **Dual-Hand Force Field Uniforms in Vertex Shader:**
-     - Field 1 (`uForce*`): Driven by Right Hand (or manual force field when programmatic API is active).
-     - Field 2 (`uForce2*`): Driven by Left Hand.
-     - Vectorial displacement accumulation: $\mathbf{d}_{\text{total}} = \mathbf{d}_1 + \mathbf{d}_2$, clamped to $\max(M_1, M_2)$ to guarantee numerical stability.
+   - **Triple-Force Field Uniforms in Vertex Shader:**
+     - Field 1 (`uForce*`): Driven by Programmatic / Manual Force Field API (Step 5.2).
+     - Field 2 (`uForce2*`): Driven by Left Hand (Step 5.3).
+     - Field 3 (`uForce3*`): Driven by Right Hand (Step 5.3).
+     - Vectorial displacement accumulation: $\mathbf{d}_{\text{total}} = \mathbf{d}_{\text{manual}} + \mathbf{d}_{\text{left}} + \mathbf{d}_{\text{right}}$, clamped to $\max(M_1, M_2, M_3)$ to guarantee visual stability and avoid overflow.
    - **Single-Hand & Two-Hand Interaction Modes:**
      - Left hand defaults to `'repel'` (pusher/shield dynamic); Right hand defaults to `'attract'` (gravitational attractor).
      - `singleHandMode` override dynamically unifies force type when only one hand is in the camera view if configured.
